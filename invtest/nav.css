@@ -1,0 +1,217 @@
+/* nav.css — app shell for the Bootstrap 5 pages.
+   Load AFTER bootstrap.min.css. Bootstrap handles nearly everything;
+   this file only adds the sidebar, the main-content offset and a few
+   small touches (hover cards, stat labels). */
+
+:root {
+    --app-sidebar-width: 260px;
+    --app-sidebar-bg: #0f172a;
+    --app-sidebar-color: #94a3b8;
+    --app-sidebar-muted: #64748b;
+    --app-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --app-sidebar-border: rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Mobile top bar (hidden on lg+) ---------- */
+.app-topbar {
+    background-color: var(--app-sidebar-bg);
+}
+
+/* ---------- Sidebar ----------
+   Uses Bootstrap's .offcanvas-lg: a slide-in drawer below 992px,
+   a normal element at 992px and up (which we pin to the left). */
+.app-sidebar.offcanvas-lg {
+    --bs-offcanvas-width: var(--app-sidebar-width);
+    --bs-offcanvas-bg: var(--app-sidebar-bg);
+    --bs-offcanvas-color: var(--app-sidebar-color);
+    background-color: var(--app-sidebar-bg) !important;
+    color: var(--app-sidebar-color);
+}
+
+.app-sidebar .offcanvas-header {
+    border-bottom: 1px solid var(--app-sidebar-border);
+}
+
+.app-sidebar .offcanvas-body {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+@media (min-width: 992px) {
+    .app-sidebar.offcanvas-lg {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: var(--app-sidebar-width);
+        z-index: 1030;
+        overflow-y: auto;
+    }
+
+    .app-sidebar .offcanvas-body {
+        flex-grow: 1;
+    }
+
+    .app-main {
+        margin-left: var(--app-sidebar-width);
+    }
+}
+
+.app-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.app-brand:hover {
+    color: #fff;
+}
+
+.app-brand-mark {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    background-color: var(--bs-primary);
+    color: #fff;
+    display: inline-grid;
+    place-items: center;
+    font-size: 1rem;
+}
+
+.app-nav-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--app-sidebar-muted);
+    padding: 1rem 1.5rem 0.35rem;
+}
+
+.app-sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.1rem 0.75rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 0.5rem;
+    color: var(--app-sidebar-color);
+    font-size: 0.925rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-sidebar .nav-link .bi {
+    font-size: 1.05rem;
+}
+
+.app-sidebar .nav-link:hover,
+.app-sidebar .nav-link:focus-visible {
+    background-color: var(--app-sidebar-hover-bg);
+    color: #fff;
+}
+
+.app-sidebar .nav-link.active {
+    background-color: var(--bs-primary);
+    color: #fff;
+}
+
+.app-sidebar-footer {
+    margin-top: auto;
+    padding: 1rem 1.5rem;
+    font-size: 0.8rem;
+    color: var(--app-sidebar-muted);
+    border-top: 1px solid var(--app-sidebar-border);
+}
+
+/* ---------- Main content ---------- */
+.app-main {
+    min-height: 100vh;
+}
+
+.page-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+/* Cards that act as links */
+.card-hover {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.card-hover:hover,
+.card-hover:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: var(--bs-box-shadow) !important;
+    border-color: rgba(var(--bs-primary-rgb), 0.35) !important;
+}
+
+.card-hover .card-arrow {
+    transition: transform 0.15s ease;
+}
+
+.card-hover:hover .card-arrow {
+    transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .card-hover,
+    .card-hover .card-arrow {
+        transition: none;
+    }
+
+    .card-hover:hover,
+    .card-hover:hover .card-arrow {
+        transform: none;
+    }
+}
+
+/* Square icon tile used on cards and stat widgets */
+.icon-tile {
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-shrink: 0;
+    border-radius: 0.65rem;
+    display: inline-grid;
+    place-items: center;
+    font-size: 1.25rem;
+}
+
+/* Stat widgets */
+.stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+/* Table header tone */
+.table thead th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+    white-space: nowrap;
+}
+
+/* Recipe photo on rmaster.php */
+.recipe-photo {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+}
+
+/* Lets text-truncate work inside flex rows */
+.min-w-0 {
+    min-width: 0;
+}

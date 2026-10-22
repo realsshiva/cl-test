@@ -1,0 +1,48 @@
+/* style.css */
+
+/* Reset basic margins */
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* --- THE LEFT NAVIGATION --- */
+nav {
+    position: fixed;     /* Sticks the menu to the screen */
+    top: 0;
+    left: 0;
+    width: 220px;        /* Width of your sidebar */
+    height: 100vh;       /* Makes it the full height of the screen */
+    background-color: #2c3e50; /* Dark blue/gray background */
+    padding-top: 20px;
+}
+
+/* Style the list to remove bullets */
+nav ul {
+    list-style-type: none; 
+    margin: 0;
+    padding: 0;
+}
+
+/* Style the links */
+nav a {
+    display: block;      /* Makes the whole row clickable, not just the text */
+    padding: 15px 20px;
+    color: white;
+    text-decoration: none; /* Removes the underline */
+    font-size: 18px;
+}
+
+/* Add a hover effect when the mouse moves over a link */
+nav a:hover {
+    background-color: #1a252f; /* Slightly darker color */
+}
+
+
+/* --- THE MAIN CONTENT --- */
+main {
+    /* Push the content to the right so the sidebar doesn't cover it! */
+    /* This must be identical to, or slightly larger than, the nav width */
+    margin-left: 220px; 
+    padding: 30px;
+}

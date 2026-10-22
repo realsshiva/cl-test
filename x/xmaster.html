@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Item Master</title>
+</head>
+<body>
+    <div class="item-master">
+        <h2>Master Information</h2>
+        <table>
+        <thead>    
+            <tr>
+                <th>Total Stock</th>
+                <th>UnitType</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>500</td>
+                <td>kg</td>
+                <td>OK</td>
+            </tr>    
+        </table>
+    </div>
+
+    <div class="list">
+        <h2>Item List</h2>
+        <table>
+        <thead>
+            <tr>
+                <th>Brand</th>
+                <th>Stock Quantity</th>
+                <th>Price</th>
+                <th>Expiration Date</th>
+                <th>Condition</th>
+                <th>Action</th>
+            </tr>
+        </thead> 
+        <tbody>
+            <tr>
+                <td>Brand A</td>
+                <td>100</td>
+                <td>$10.00</td>
+                <td>2024-12-31</td>
+                <td>Good</td>
+                <td><div class="action-buttons">
+            <button class="btn-edit" onclick="handleEdit()">Edit</button>
+            <button class="btn-delete" onclick="handleDelete()">Delete</button>
+          </div></td>
+            </tr>
+            <tr>
+                <td>Brand B</td>
+                <td>200</td>
+                <td>$15.00</td>
+                <td>2025-01-15</td>
+                <td>Good</td>
+                <td><div class="action-buttons">
+            <button class="btn-edit" onclick="handleEdit()">Edit</button>
+            <button class="btn-delete" onclick="handleDelete()">Delete</button>
+          </div></td>
+            </tr>
+        </tbody>
+        </table>
+    </div>
+</body>
+</html>
