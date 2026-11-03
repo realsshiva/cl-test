@@ -221,63 +221,65 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $batch) {
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Production Log</title>
-	<link rel="stylesheet" href="/cl-test/invtest/style.css">
-	<style>
-		body { margin: 40px 40px 40px 260px; font-family: Arial, sans-serif; color: #252a27; }
-		main { max-width: 900px; }
-		.notice { margin: 14px 0; padding: 11px 14px; background: #fff0ed; border-left: 4px solid #bd4937; }
-		.modal { display: flex; position: fixed; z-index: 20; inset: 0; align-items: center; justify-content: center; padding: 20px; background: rgb(0 0 0 / 45%); }
-		.modal-panel { box-sizing: border-box; width: min(100%, 480px); padding: 22px; background: #fff; border-radius: 6px; box-shadow: 0 12px 36px rgb(0 0 0 / 20%); }
-		.modal-panel h2 { margin: 0 0 12px; font-size: 22px; }
-		.production-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-		.batch-details { margin: 0 0 18px; color: #59635d; }
-		.field { margin: 14px 0; }
-		.field label { display: block; margin-bottom: 6px; font-weight: 600; }
-		.field input { box-sizing: border-box; width: 100%; padding: 9px; font: inherit; }
-		.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-		.btn { display: inline-block; padding: 8px 12px; border: 1px solid #69736d; border-radius: 4px; background: #fff; color: #26312a; cursor: pointer; text-decoration: none; font: inherit; }
-		.btn-primary { color: #fff; background: #287a59; border-color: #23684c; }
-		.btn-secondary { background: #f1f4f2; }
-		@media (max-width: 700px) { body { margin: 20px; padding-top: 220px; } }
-	</style>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+	<link rel="stylesheet" href="/cl-test/invtest/nav.css">
 </head>
-<body>
+<body class="bg-body-tertiary">
 <?php include 'nav.php'; ?>
-<main>
-	<h1>Production Log</h1>
-	<?php if ($error !== ''): ?><div class="notice"><?php echo e($error); ?></div><?php endif; ?>
+
+<main class="app-main">
+	<div class="container-fluid py-4 px-3 px-lg-4">
+		<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+			<h1 class="page-title mb-0">Production Log</h1>
+			<a class="btn btn-outline-secondary" href="prodqueue.php"><i class="bi bi-arrow-left me-1"></i>Back to Production Queue</a>
+		</div>
+
+		<?php if ($error !== ''): ?>
+			<div class="alert alert-danger" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($error); ?></div>
+		<?php endif; ?>
+
+		<?php if ($batch): ?>
+			<div class="card border-0 shadow-sm" style="max-width: 560px;">
+				<div class="card-header bg-body border-bottom py-3">
+					<h2 class="h6 mb-1" id="production-log-title"><?php echo e($batch['prodbatch-Name']); ?></h2>
+					<div class="small text-body-secondary">Planned quantity: <?php echo e($batch['prodbatch-Qty']); ?></div>
+				</div>
+				<form method="post" action="prodlog.php" aria-labelledby="production-log-title">
+					<div class="card-body">
+						<input type="hidden" name="prodbatch-Id" value="<?php echo e($batch['prodbatch-Id']); ?>">
+						<div class="row g-3">
+							<div class="col-12 col-sm-6">
+								<label for="success-quantity" class="form-label">Success</label>
+								<input id="success-quantity" class="form-control" name="prodlog-QtySuccess" type="number" min="0" step="1" value="<?php echo e($successQuantity); ?>" required>
+							</div>
+							<div class="col-12 col-sm-6">
+								<label for="best-before" class="form-label">Best Before</label>
+								<input id="best-before" class="form-control" name="prodlog-ExpiryDate" type="date" value="<?php echo e($expiryDate); ?>" required>
+							</div>
+							<div class="col-12 col-sm-6">
+								<label for="error-quantity" class="form-label">Error</label>
+								<input id="error-quantity" class="form-control" name="prodlog-QtyError" type="number" min="0" step="1" value="<?php echo e($errorQuantity); ?>" required>
+							</div>
+							<div class="col-12">
+								<label for="reason" class="form-label">Reason</label>
+								<input id="reason" class="form-control" name="prodlog-Reason" type="text" value="<?php echo e($reason); ?>" <?php echo (int)$errorQuantity > 0 ? 'required' : ''; ?>>
+								<div class="form-text">Required when Error is more than zero.</div>
+							</div>
+						</div>
+					</div>
+					<div class="card-footer bg-body d-flex justify-content-end gap-2 py-3">
+						<a class="btn btn-outline-secondary" href="prodqueue.php">Cancel</a>
+						<button class="btn btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Confirm</button>
+					</div>
+				</form>
+			</div>
+		<?php endif; ?>
+	</div>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <?php if ($batch): ?>
-<div class="modal" role="dialog" aria-modal="true" aria-labelledby="production-log-title">
-	<div class="modal-panel">
-		<h2 id="production-log-title">Production Log</h2>
-		<p class="batch-details"><strong><?php echo e($batch['prodbatch-Name']); ?></strong> &mdash; planned quantity: <?php echo e($batch['prodbatch-Qty']); ?></p>
-		<form method="post" action="prodlog.php">
-			<input type="hidden" name="prodbatch-Id" value="<?php echo e($batch['prodbatch-Id']); ?>">
-			<div class="field">
-				<label for="success-quantity">Success</label>
-				<input id="success-quantity" name="prodlog-QtySuccess" type="number" min="0" step="1" value="<?php echo e($successQuantity); ?>" required>
-			</div>
-			<div class="field">
-				<label for="best-before">Best Before</label>
-				<input id="best-before" name="prodlog-ExpiryDate" type="date" value="<?php echo e($expiryDate); ?>" required>
-			</div>
-			<div class="field">
-				<label for="error-quantity">Error</label>
-				<input id="error-quantity" name="prodlog-QtyError" type="number" min="0" step="1" value="<?php echo e($errorQuantity); ?>" required>
-			</div>
-			<div class="field">
-				<label for="reason">Reason</label>
-				<input id="reason" name="prodlog-Reason" type="text" value="<?php echo e($reason); ?>" <?php echo (int)$errorQuantity > 0 ? 'required' : ''; ?>>
-			</div>
-			<div class="modal-actions">
-				<a class="btn" href="prodqueue.php">Cancel</a>
-				<button class="btn btn-primary" type="submit">Confirm</button>
-			</div>
-		</form>
-	</div>
-</div>
 <script>
 	const errorQuantity = document.getElementById('error-quantity');
 	const reason = document.getElementById('reason');

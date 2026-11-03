@@ -131,97 +131,115 @@ if ($isLoaded) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Production Form</title>
-    <link rel="stylesheet" href="/cl-test/invtest/style.css">
-    <style>
-        body { margin: 40px 40px 40px 260px; font-family: Arial, sans-serif; }
-        .panel { max-width: 1100px; }
-        .selection { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 16px; margin: 20px 0; }
-        .field label { display: block; margin-bottom: 5px; font-weight: bold; }
-        .field select, .field input { width: 100%; box-sizing: border-box; padding: 9px; }
-        .actions { display: flex; gap: 10px; margin-top: 18px; }
-        .btn { padding: 9px 15px; border: 1px solid #555; border-radius: 4px; background: #fff; cursor: pointer; text-decoration: none; color: #222; }
-        .btn-primary { background: #287a59; border-color: #23684c; color: #fff; }
-        .notice { padding: 10px; margin: 16px 0; background: #fff3cd; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 10px 8px; border: 1px solid #ddd; text-align: left; }
-        th { background: #f4f4f4; }
-        @media (max-width: 700px) { body { margin: 20px; padding-top: 220px; } .selection { grid-template-columns: 1fr; } }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/cl-test/invtest/nav.css">
 </head>
-<body>
+<body class="bg-body-tertiary">
     <?php include 'nav.php'; ?>
-    <main class="panel">
-        <h1>Production Selection</h1>
-        <?php if ($error !== ''): ?><div class="notice"><?php echo e($error); ?></div><?php endif; ?>
 
-        <form method="get" action="prodform.php">
-            <input type="hidden" name="action" value="load">
-            <div class="selection">
-                <div class="field">
-                    <label for="category">Category</label>
-                    <select id="category" name="reccat-Id" required>
-                        <option value="">Select category</option>
-                        <?php foreach ($categories as $category): ?>
-                            <option value="<?php echo e($category['reccat-Id']); ?>" <?php echo $categoryId === $category['reccat-Id'] ? 'selected' : ''; ?>><?php echo e($category['reccat-Name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="recipe">Product Name</label>
-                    <select id="recipe" name="rec-Id" required>
-                        <option value="">Select product</option>
-                        <?php foreach ($recipes as $recipe): ?>
-                            <option value="<?php echo e($recipe['rec-Id']); ?>" data-category="<?php echo e($recipe['reccat-Id']); ?>" <?php echo $recipeId === $recipe['rec-Id'] ? 'selected' : ''; ?>><?php echo e($recipe['rec-Name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="variant">Size/Pieces and Foundation</label>
-                    <select id="variant" name="recvar-Id" required>
-                        <option value="">Select size/pieces and foundation</option>
-                        <?php $shownVariantLabels = []; ?>
-                        <?php foreach ($variants as $variant): ?>
-                            <?php $variantLabel = trim($variant['recvar-SizeOrPcs'] . ($variant['recvar-Foundation'] !== '' ? ' | ' . $variant['recvar-Foundation'] : '')); ?>
-                            <?php if (isset($shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel])) continue; ?>
-                            <?php $shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel] = true; ?>
-                            <option value="<?php echo e($variant['recvar-Id']); ?>" data-recipe="<?php echo e($variant['rec-Id']); ?>" <?php echo $variantId === $variant['recvar-Id'] ? 'selected' : ''; ?>><?php echo e($variantLabel); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="batch-quantity">Batch Quantity</label>
-                    <input id="batch-quantity" name="batch-quantity" type="number" min="0.01" step="0.01" value="<?php echo $batchQuantity > 0 ? e($batchQuantity) : ''; ?>" required>
+    <main class="app-main">
+        <div class="container-fluid py-4 px-3 px-lg-4">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+                <h1 class="page-title mb-0">Production Selection</h1>
+                <nav class="nav nav-pills gap-2" aria-label="Production pages">
+                    <a class="nav-link active" href="prodform.php" aria-current="page"><i class="bi bi-clipboard-check me-1"></i>Production Form</a>
+                    <a class="nav-link border" href="prodqueue.php"><i class="bi bi-list-task me-1"></i>Production Queue</a>
+                </nav>
+            </div>
+
+            <?php if ($error !== ''): ?>
+                <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($error); ?></div>
+            <?php endif; ?>
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <form method="get" action="prodform.php">
+                        <input type="hidden" name="action" value="load">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="category" class="form-label">Category</label>
+                                <select id="category" class="form-select" name="reccat-Id" required>
+                                    <option value="">Select category</option>
+                                    <?php foreach ($categories as $category): ?>
+                                        <option value="<?php echo e($category['reccat-Id']); ?>" <?php echo $categoryId === $category['reccat-Id'] ? 'selected' : ''; ?>><?php echo e($category['reccat-Name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="recipe" class="form-label">Product Name</label>
+                                <select id="recipe" class="form-select" name="rec-Id" required>
+                                    <option value="">Select product</option>
+                                    <?php foreach ($recipes as $recipe): ?>
+                                        <option value="<?php echo e($recipe['rec-Id']); ?>" data-category="<?php echo e($recipe['reccat-Id']); ?>" <?php echo $recipeId === $recipe['rec-Id'] ? 'selected' : ''; ?>><?php echo e($recipe['rec-Name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="variant" class="form-label">Size/Pieces and Foundation</label>
+                                <select id="variant" class="form-select" name="recvar-Id" required>
+                                    <option value="">Select size/pieces and foundation</option>
+                                    <?php $shownVariantLabels = []; ?>
+                                    <?php foreach ($variants as $variant): ?>
+                                        <?php $variantLabel = trim($variant['recvar-SizeOrPcs'] . ($variant['recvar-Foundation'] !== '' ? ' | ' . $variant['recvar-Foundation'] : '')); ?>
+                                        <?php if (isset($shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel])) continue; ?>
+                                        <?php $shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel] = true; ?>
+                                        <option value="<?php echo e($variant['recvar-Id']); ?>" data-recipe="<?php echo e($variant['rec-Id']); ?>" <?php echo $variantId === $variant['recvar-Id'] ? 'selected' : ''; ?>><?php echo e($variantLabel); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="batch-quantity" class="form-label">Batch Quantity</label>
+                                <!-- Whole numbers only: prodqueue.php rejects decimal batch quantities on Confirm -->
+                                <input id="batch-quantity" class="form-control" name="batch-quantity" type="number" min="1" step="1" value="<?php echo $batchQuantity > 0 ? e($batchQuantity) : ''; ?>" required>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" type="submit"><i class="bi bi-arrow-down-circle me-1"></i>Load</button>
+                        </div>
+                    </form>
                 </div>
             </div>
-            <button class="btn btn-primary" type="submit">Load</button>
-        </form>
 
-        <?php if ($isLoaded && $error === ''): ?>
-            <h2>Ingredients Needed</h2>
-            <table>
-                <thead><tr><th>Ingredients Needed</th><th>Batch Quantity</th><th>Current Stock</th></tr></thead>
-                <tbody>
-                    <?php foreach ($ingredients as $ingredient): ?>
-                        <tr>
-                            <td><?php echo e($ingredient['name']); ?></td>
-                            <td><?php echo e(formatQuantity($ingredient['required'], $ingredient['requiredUnit'])); ?></td>
-                            <td><?php echo e(formatQuantity($ingredient['stock'], $ingredient['stockUnit'])); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-            <form class="actions" method="post" action="prodqueue.php">
-                <input type="hidden" name="action" value="confirm_production">
-                <input type="hidden" name="reccat-Id" value="<?php echo e($categoryId); ?>">
-                <input type="hidden" name="rec-Id" value="<?php echo e($recipeId); ?>">
-                <input type="hidden" name="recvar-Id" value="<?php echo e($variantId); ?>">
-                <input type="hidden" name="batch-quantity" value="<?php echo e($batchQuantity); ?>">
-                <input type="hidden" name="prodbatch-Name" value="<?php echo e($categoryName . ' | ' . $recipeName . ' | ' . $variantName); ?>">
-                <button class="btn btn-primary" type="submit">Confirm</button>
-                <a class="btn" href="prodform.php">Clear</a>
-            </form>
-        <?php endif; ?>
+            <?php if ($isLoaded && $error === ''): ?>
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-body border-bottom py-3">
+                        <h2 class="h6 mb-0">Ingredients Needed</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr><th>Ingredients Needed</th><th class="text-end">Batch Quantity</th><th class="text-end">Current Stock</th></tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($ingredients as $ingredient): ?>
+                                    <tr>
+                                        <td><?php echo e($ingredient['name']); ?></td>
+                                        <td class="text-end text-nowrap"><?php echo e(formatQuantity($ingredient['required'], $ingredient['requiredUnit'])); ?></td>
+                                        <td class="text-end text-nowrap"><?php echo e(formatQuantity($ingredient['stock'], $ingredient['stockUnit'])); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer bg-body py-3">
+                        <form class="d-flex flex-wrap gap-2" method="post" action="prodqueue.php">
+                            <input type="hidden" name="action" value="confirm_production">
+                            <input type="hidden" name="reccat-Id" value="<?php echo e($categoryId); ?>">
+                            <input type="hidden" name="rec-Id" value="<?php echo e($recipeId); ?>">
+                            <input type="hidden" name="recvar-Id" value="<?php echo e($variantId); ?>">
+                            <input type="hidden" name="batch-quantity" value="<?php echo e($batchQuantity); ?>">
+                            <input type="hidden" name="prodbatch-Name" value="<?php echo e($categoryName . ' | ' . $recipeName . ' | ' . $variantName); ?>">
+                            <button class="btn btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Confirm</button>
+                            <a class="btn btn-outline-secondary" href="prodform.php">Clear</a>
+                        </form>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
     </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
         const category = document.getElementById('category');
         const recipe = document.getElementById('recipe');

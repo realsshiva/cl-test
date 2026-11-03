@@ -12,6 +12,7 @@ $navSections = [
     'Inventory' => [
         ['Raw Ingredients', 'category.php', 'bi-basket', ['category.php', 'item.php', 'master.php']],
         ['Finished Goods', 'finishg.php', 'bi-box-seam', ['finishg.php']],
+        ['Dispatch Log', 'dispatchlog.php', 'bi-truck', ['dispatchlog.php']],
     ],
     'Recipes & Production' => [
         ['Recipe Categories', 'rcategory.php', 'bi-journal-richtext', ['rcategory.php', 'ritem.php', 'rmaster.php']],
@@ -20,6 +21,10 @@ $navSections = [
     'Records' => [
         ['Stock History', 'history.php', 'bi-clock-history', ['history.php']],
         ['Waste Log', 'waste.php', 'bi-trash3', ['waste.php']],
+    ],
+    // Hrefs starting with "/" are used as-is, so they can point outside invtest/.
+    'Switch System' => [
+        ['Point of Sale', '/cl-test/postest/counter.php', 'bi-shop', []],
     ],
 ];
 ?>
@@ -59,7 +64,7 @@ $navSections = [
                         <?php $navIsActive = in_array($navCurrentPage, $navLink[3], true); ?>
                         <li class="nav-item">
                             <a class="nav-link<?php echo $navIsActive ? ' active' : ''; ?>"
-                               href="/cl-test/invtest/<?php echo $navLink[1]; ?>"
+                               href="<?php echo $navLink[1][0] === '/' ? $navLink[1] : '/cl-test/invtest/' . $navLink[1]; ?>"
                                <?php echo $navIsActive ? 'aria-current="page"' : ''; ?>>
                                 <i class="bi <?php echo $navLink[2]; ?>"></i>
                                 <span><?php echo htmlspecialchars($navLink[0], ENT_QUOTES, 'UTF-8'); ?></span>
@@ -71,7 +76,7 @@ $navSections = [
         </nav>
 
         <div class="app-sidebar-footer">
-            <i class="bi bi-shop me-1"></i> Inventory &amp; Recipe Manager
+            <i class="bi bi-shop me-1"></i> CakeLab Inventory Manager
         </div>
     </div>
 </aside>

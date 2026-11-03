@@ -236,138 +236,164 @@ $messages = [
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Production Queue</title>
-	<link rel="stylesheet" href="/cl-test/invtest/style.css">
-	<style>
-		body { margin: 40px 40px 40px 260px; font-family: Arial, sans-serif; color: #252a27; }
-		main { max-width: 1200px; }
-		h1 { margin-top: 0; }
-		.notice { margin: 14px 0; padding: 11px 14px; background: #e7f3ed; border-left: 4px solid #287a59; }
-		.error { background: #fff0ed; border-left-color: #bd4937; }
-		.table-wrap { overflow-x: auto; }
-		table { width: 100%; border-collapse: collapse; margin: 16px 0 28px; }
-		th, td { padding: 10px 11px; border: 1px solid #d6dcd8; text-align: left; vertical-align: middle; }
-		th { background: #f1f4f2; }
-		.status { display: inline-block; padding: 5px 9px; border-radius: 4px; font-size: 13px; font-weight: 700; white-space: nowrap; }
-		.sufficient, .ok { color: #145c37; background: #d9f0e1; }
-		.insufficient, .low { color: #872d25; background: #fde0dc; }
-		.out { color: #fff; background: #a92e25; }
-		.actions { display: flex; flex-wrap: wrap; gap: 6px; }
-		.actions form { margin: 0; }
-		.btn { display: inline-block; padding: 7px 10px; border: 1px solid #69736d; border-radius: 4px; background: #fff; color: #26312a; cursor: pointer; text-decoration: none; font: inherit; font-size: 14px; }
-		.btn-primary { color: #fff; background: #287a59; border-color: #23684c; }
-		.btn-danger { color: #9b3027; border-color: #b24a40; }
-		.btn:disabled { opacity: .5; cursor: not-allowed; }
-		.production-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-		.production-navigation .btn[aria-current="page"] { color: #fff; background: #287a59; border-color: #23684c; }
-		.item-link { color: #205d46; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
-		.muted { color: #66716a; }
-		.detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-		.detail-heading h2 { margin: 0; }
-		.modal { display: none; position: fixed; z-index: 20; inset: 0; align-items: center; justify-content: center; padding: 20px; background: rgb(0 0 0 / 45%); }
-		.modal.open { display: flex; }
-		.modal-panel { width: min(100%, 440px); padding: 22px; background: #fff; border-radius: 6px; box-shadow: 0 12px 36px rgb(0 0 0 / 20%); }
-		.modal-panel h2 { margin: 0 0 12px; font-size: 20px; }
-		.modal-panel label { display: block; margin-bottom: 6px; font-weight: 600; }
-		.modal-panel input { box-sizing: border-box; width: 100%; padding: 9px; }
-		.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-		@media (max-width: 700px) { body { margin: 20px; padding-top: 220px; } th, td { padding: 8px; } }
-	</style>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+	<link rel="stylesheet" href="/cl-test/invtest/nav.css">
 </head>
-<body>
+<body class="bg-body-tertiary">
 <?php include 'nav.php'; ?>
-<main>
-	<h1>Production Queue</h1>
-	<nav class="production-navigation" aria-label="Production pages">
-		<a class="btn" href="prodform.php">Production Form</a>
-		<a class="btn" href="prodqueue.php" aria-current="page">Production Queue</a>
-	</nav>
-	<?php if ($error !== ''): ?><div class="notice error"><?php echo e($error); ?></div><?php endif; ?>
-	<?php if (isset($messages[$message])): ?><div class="notice"><?php echo e($messages[$message]); ?></div><?php endif; ?>
-	<div class="table-wrap">
-		<table>
-			<thead><tr><th>Item Name</th><th>Batch Quantity</th><th>Ingredient Status</th><th>Actions</th></tr></thead>
-			<tbody>
-			<?php if (count($activeBatches) === 0): ?>
-				<tr><td colspan="4" class="muted">No production batches are waiting in the queue.</td></tr>
-			<?php else: ?>
-				<?php foreach ($activeBatches as $batch): ?>
-					<tr>
-						<td><a class="item-link" href="prodqueue.php?selected=<?php echo rawurlencode((string)$batch['prodbatch-Id']); ?>"><?php echo e($batch['prodbatch-Name']); ?></a></td>
-						<td><?php echo e($batch['prodbatch-Qty']); ?></td>
-						<td><span class="status <?php echo $batch['sufficient'] ? 'sufficient' : 'insufficient'; ?>"><?php echo $batch['sufficient'] ? 'Sufficient' : 'Insufficient'; ?></span></td>
-						<td>
-							<div class="actions">
-								<?php if ($batch['prodbatch-Status'] === 'Pending'): ?>
-									<button class="btn edit-button" type="button" data-id="<?php echo e($batch['prodbatch-Id']); ?>" data-qty="<?php echo e($batch['prodbatch-Qty']); ?>">Edit</button>
-									<form method="get" action="prodlog.php">
-										<input type="hidden" name="prodbatch-Id" value="<?php echo e($batch['prodbatch-Id']); ?>">
-										<button class="btn btn-primary" type="submit" <?php echo $batch['sufficient'] ? '' : 'disabled title="There is not enough available ingredient stock to produce this batch."'; ?>>Confirm</button>
-									</form>
-									<button class="btn btn-danger cancel-button" type="button" data-id="<?php echo e($batch['prodbatch-Id']); ?>">Cancel</button>
-								<?php else: ?>
-									<span class="muted"><?php echo e($batch['prodbatch-Status']); ?></span>
-								<?php endif; ?>
-							</div>
-						</td>
-					</tr>
-				<?php endforeach; ?>
-			<?php endif; ?>
-			</tbody>
-		</table>
+
+<main class="app-main">
+	<div class="container-fluid py-4 px-3 px-lg-4">
+		<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+			<h1 class="page-title mb-0">Production Queue</h1>
+			<nav class="nav nav-pills gap-2" aria-label="Production pages">
+				<a class="nav-link border" href="prodform.php"><i class="bi bi-clipboard-check me-1"></i>Production Form</a>
+				<a class="nav-link active" href="prodqueue.php" aria-current="page"><i class="bi bi-list-task me-1"></i>Production Queue</a>
+			</nav>
+		</div>
+
+		<?php if ($error !== ''): ?>
+			<div class="alert alert-danger" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($error); ?></div>
+		<?php endif; ?>
+		<?php if (isset($messages[$message])): ?>
+			<div class="alert alert-success" role="status"><i class="bi bi-check-circle me-2"></i><?php echo e($messages[$message]); ?></div>
+		<?php endif; ?>
+
+		<div class="card border-0 shadow-sm mb-4">
+			<div class="table-responsive">
+				<table class="table table-hover align-middle mb-0">
+					<thead class="table-light">
+						<tr><th>Item Name</th><th>Batch Quantity</th><th>Ingredient Status</th><th class="text-end">Actions</th></tr>
+					</thead>
+					<tbody>
+					<?php if (count($activeBatches) === 0): ?>
+						<tr><td colspan="4" class="text-center text-body-secondary py-4">No production batches are waiting in the queue.</td></tr>
+					<?php else: ?>
+						<?php foreach ($activeBatches as $batch): ?>
+							<tr<?php echo (string)$batch['prodbatch-Id'] === $selectedId ? ' class="table-active"' : ''; ?>>
+								<td><a class="link-primary fw-semibold" href="prodqueue.php?selected=<?php echo rawurlencode((string)$batch['prodbatch-Id']); ?>"><?php echo e($batch['prodbatch-Name']); ?></a></td>
+								<td><?php echo e($batch['prodbatch-Qty']); ?></td>
+								<td>
+									<?php if ($batch['sufficient']): ?>
+										<span class="badge rounded-pill bg-success-subtle text-success-emphasis">Sufficient</span>
+									<?php else: ?>
+										<span class="badge rounded-pill bg-danger-subtle text-danger-emphasis">Insufficient</span>
+									<?php endif; ?>
+								</td>
+								<td class="text-end">
+									<div class="d-inline-flex flex-wrap justify-content-end gap-2">
+										<?php if ($batch['prodbatch-Status'] === 'Pending'): ?>
+											<button class="btn btn-outline-secondary btn-sm edit-button" type="button"
+												data-bs-toggle="modal" data-bs-target="#edit-modal"
+												data-id="<?php echo e($batch['prodbatch-Id']); ?>" data-qty="<?php echo e($batch['prodbatch-Qty']); ?>">
+												<i class="bi bi-pencil me-1"></i>Edit
+											</button>
+											<form class="d-inline" method="get" action="prodlog.php">
+												<input type="hidden" name="prodbatch-Id" value="<?php echo e($batch['prodbatch-Id']); ?>">
+												<?php if ($batch['sufficient']): ?>
+													<button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-check2-circle me-1"></i>Confirm</button>
+												<?php else: ?>
+													<span class="d-inline-block" tabindex="0" title="There is not enough available ingredient stock to produce this batch.">
+														<button class="btn btn-primary btn-sm" type="submit" disabled><i class="bi bi-check2-circle me-1"></i>Confirm</button>
+													</span>
+												<?php endif; ?>
+											</form>
+											<button class="btn btn-outline-danger btn-sm cancel-button" type="button"
+												data-bs-toggle="modal" data-bs-target="#cancel-modal"
+												data-id="<?php echo e($batch['prodbatch-Id']); ?>">
+												<i class="bi bi-x-lg me-1"></i>Cancel
+											</button>
+										<?php else: ?>
+											<span class="text-body-secondary"><?php echo e($batch['prodbatch-Status']); ?></span>
+										<?php endif; ?>
+									</div>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					<?php endif; ?>
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<?php if ($selectedBatch !== null): ?>
+			<div class="card border-0 shadow-sm">
+				<div class="card-header bg-body border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2 py-3">
+					<h2 class="h6 mb-0">Ingredients Needed: <?php echo e($selectedBatch['prodbatch-Name']); ?></h2>
+					<button class="btn btn-outline-secondary btn-sm" id="toggle-ingredients" type="button" aria-controls="ingredients-table" aria-expanded="true">Hide</button>
+				</div>
+				<div class="table-responsive" id="ingredients-table">
+					<table class="table table-hover align-middle mb-0">
+						<thead class="table-light">
+							<tr><th>Ingredient Name</th><th class="text-end">Quantity</th><th class="text-end">In-Stock</th><th>Ingredient Status</th></tr>
+						</thead>
+						<tbody>
+						<?php if (count($selectedBatch['ingredients']) === 0): ?>
+							<tr><td colspan="4" class="text-center text-body-secondary py-4">No ingredients are configured for this recipe variant.</td></tr>
+						<?php else: ?>
+							<?php foreach ($selectedBatch['ingredients'] as $ingredient): ?>
+								<?php $statusClass = $ingredient['status'] === 'OK' ? 'bg-success-subtle text-success-emphasis' : ($ingredient['status'] === 'Low' ? 'bg-warning-subtle text-warning-emphasis' : 'text-bg-danger'); ?>
+								<tr>
+									<td><?php echo e($ingredient['name']); ?></td>
+									<td class="text-end text-nowrap"><?php echo e(number_format((float)$ingredient['required'], 2, '.', '')); ?> <?php echo e($ingredient['requiredUnit']); ?></td>
+									<td class="text-end text-nowrap"><?php echo e($ingredient['stockText']); ?></td>
+									<td><span class="badge rounded-pill <?php echo e($statusClass); ?>"><?php echo e($ingredient['status']); ?></span></td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
+						</tbody>
+					</table>
+				</div>
+			</div>
+		<?php endif; ?>
 	</div>
-	<?php if ($selectedBatch !== null): ?>
-		<div class="detail-heading">
-			<h2>Ingredients Needed: <?php echo e($selectedBatch['prodbatch-Name']); ?></h2>
-			<button class="btn" id="toggle-ingredients" type="button" aria-controls="ingredients-table" aria-expanded="true">Hide</button>
-		</div>
-		<div class="table-wrap" id="ingredients-table">
-			<table>
-				<thead><tr><th>Ingredient Name</th><th>Quantity</th><th>In-Stock</th><th>Ingredient Status</th></tr></thead>
-				<tbody>
-				<?php if (count($selectedBatch['ingredients']) === 0): ?>
-					<tr><td colspan="4" class="muted">No ingredients are configured for this recipe variant.</td></tr>
-				<?php else: ?>
-					<?php foreach ($selectedBatch['ingredients'] as $ingredient): ?>
-						<?php $statusClass = $ingredient['status'] === 'OK' ? 'ok' : ($ingredient['status'] === 'Low' ? 'low' : 'out'); ?>
-						<tr>
-							<td><?php echo e($ingredient['name']); ?></td>
-							<td><?php echo e(number_format((float)$ingredient['required'], 2, '.', '')); ?> <?php echo e($ingredient['requiredUnit']); ?></td>
-							<td><?php echo e($ingredient['stockText']); ?></td>
-							<td><span class="status <?php echo e($statusClass); ?>"><?php echo e($ingredient['status']); ?></span></td>
-						</tr>
-					<?php endforeach; ?>
-				<?php endif; ?>
-				</tbody>
-			</table>
-		</div>
-	<?php endif; ?>
 </main>
 
-<div class="modal" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
-	<div class="modal-panel">
-		<h2 id="edit-title">Edit batch quantity</h2>
-		<form method="post" action="prodqueue.php">
-			<input type="hidden" name="action" value="update_batch">
-			<input type="hidden" name="prodbatch-Id" id="edit-batch-id">
-			<label for="edit-quantity">Batch Quantity</label>
-			<input id="edit-quantity" name="prodbatch-Qty" type="number" min="1" step="1" required>
-			<div class="modal-actions"><button class="btn close-modal" type="button">No</button><button class="btn btn-primary" type="submit">Save</button></div>
-		</form>
+<div class="modal fade" id="edit-modal" tabindex="-1" aria-labelledby="edit-title" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<form method="post" action="prodqueue.php">
+				<div class="modal-header">
+					<h2 class="modal-title fs-5" id="edit-title">Edit batch quantity</h2>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<div class="modal-body">
+					<input type="hidden" name="action" value="update_batch">
+					<input type="hidden" name="prodbatch-Id" id="edit-batch-id">
+					<label for="edit-quantity" class="form-label">Batch Quantity</label>
+					<input id="edit-quantity" class="form-control" name="prodbatch-Qty" type="number" min="1" step="1" required>
+				</div>
+				<div class="modal-footer">
+					<button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">No</button>
+					<button class="btn btn-primary" type="submit">Save</button>
+				</div>
+			</form>
+		</div>
 	</div>
 </div>
-<div class="modal" id="cancel-modal" role="dialog" aria-modal="true" aria-labelledby="cancel-title">
-	<div class="modal-panel">
-		<h2 id="cancel-title">Are you sure to cancel this batch?</h2>
-		<form method="post" action="prodqueue.php">
-			<input type="hidden" name="action" value="cancel_batch">
-			<input type="hidden" name="prodbatch-Id" id="cancel-batch-id">
-			<div class="modal-actions"><button class="btn close-modal" type="button">No</button><button class="btn btn-danger" type="submit">Yes</button></div>
-		</form>
+
+<div class="modal fade" id="cancel-modal" tabindex="-1" aria-labelledby="cancel-title" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<form method="post" action="prodqueue.php">
+				<div class="modal-header">
+					<h2 class="modal-title fs-5" id="cancel-title">Are you sure to cancel this batch?</h2>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<input type="hidden" name="action" value="cancel_batch">
+				<input type="hidden" name="prodbatch-Id" id="cancel-batch-id">
+				<div class="modal-footer">
+					<button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">No</button>
+					<button class="btn btn-danger" type="submit">Yes</button>
+				</div>
+			</form>
+		</div>
 	</div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <script>
-	const editModal = document.getElementById('edit-modal');
-	const cancelModal = document.getElementById('cancel-modal');
 	const ingredientsToggle = document.getElementById('toggle-ingredients');
 	if (ingredientsToggle) {
 		const ingredientsTable = document.getElementById('ingredients-table');
@@ -378,26 +404,18 @@ $messages = [
 			ingredientsToggle.textContent = isExpanded ? 'Show ingredients' : 'Hide';
 		});
 	}
-	document.querySelectorAll('.edit-button').forEach((button) => {
-		button.addEventListener('click', () => {
-			document.getElementById('edit-batch-id').value = button.dataset.id;
-			document.getElementById('edit-quantity').value = button.dataset.qty;
-			editModal.classList.add('open');
-		});
+
+	// Fill each Bootstrap modal with the clicked row's data before it opens.
+	document.getElementById('edit-modal').addEventListener('show.bs.modal', (event) => {
+		const button = event.relatedTarget;
+		if (!button) return;
+		document.getElementById('edit-batch-id').value = button.dataset.id;
+		document.getElementById('edit-quantity').value = button.dataset.qty;
 	});
-	document.querySelectorAll('.cancel-button').forEach((button) => {
-		button.addEventListener('click', () => {
-			document.getElementById('cancel-batch-id').value = button.dataset.id;
-			cancelModal.classList.add('open');
-		});
-	});
-	document.querySelectorAll('.close-modal').forEach((button) => {
-		button.addEventListener('click', () => button.closest('.modal').classList.remove('open'));
-	});
-	document.querySelectorAll('.modal').forEach((modal) => {
-		modal.addEventListener('click', (event) => {
-			if (event.target === modal) modal.classList.remove('open');
-		});
+	document.getElementById('cancel-modal').addEventListener('show.bs.modal', (event) => {
+		const button = event.relatedTarget;
+		if (!button) return;
+		document.getElementById('cancel-batch-id').value = button.dataset.id;
 	});
 </script>
 </body>

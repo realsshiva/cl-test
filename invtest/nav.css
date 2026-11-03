@@ -211,6 +211,23 @@
     object-fit: cover;
 }
 
+/* ---------- POS pages (postest/) ---------- */
+
+/* Product photo on pmaster.php cards */
+.product-photo {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+}
+
+/* Section frame used by supply.php and records.php */
+.pos-frame {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 13rem);
+    min-height: 32rem;
+}
+
 /* Lets text-truncate work inside flex rows */
 .min-w-0 {
     min-width: 0;
