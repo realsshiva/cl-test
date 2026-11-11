@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/cake_options.php';
 
 function e($value): string
 {
@@ -160,8 +161,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		redirectQueue($changed ? 'cancelled' : 'unchanged');
 	} elseif ($action === 'update_batch' && $batchId !== false && $batchId > 0) {
 		$quantity = filter_var($_POST['prodbatch-Qty'] ?? '', FILTER_VALIDATE_INT);
+		// Cakes from the Cake Builder keep their own name; their variants live in variant2/variant3.
+		$customCheck = $conn->prepare('SELECT 1 FROM `m3.1-custom_cake_design` WHERE `prodbatch-Id` = ? LIMIT 1');
+		$customCheck->bind_param('i', $batchId);
+		$customCheck->execute();
+		$isCustomCake = (bool)$customCheck->get_result()->fetch_row();
+		$customCheck->close();
+
 		if ($quantity === false || $quantity < 1) {
 			$error = 'Batch quantity must be a whole number greater than zero.';
+		} elseif ($isCustomCake) {
+			$update = $conn->prepare('UPDATE `m3-production_batch` SET `prodbatch-Qty` = ? WHERE `prodbatch-Id` = ? AND `prodbatch-Status` = \'Pending\'');
+			$update->bind_param('ii', $quantity, $batchId);
+			$update->execute();
+			$found = $conn->query('SELECT 1 FROM `m3-production_batch` WHERE `prodbatch-Id` = ' . (int)$batchId . ' AND `prodbatch-Status` = \'Pending\'')->num_rows > 0;
+			$update->close();
+			redirectQueue($found ? 'updated' : 'unchanged', (string)$batchId);
 		} else {
 			$lookup = $conn->prepare(
 				'SELECT b.`recvar-Id`, r.`rec-Name`, v.`recvar-SizeOrPcs`, v.`recvar-Foundation` FROM `m3-production_batch` b
@@ -197,9 +212,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $activeBatches = [];
 $result = $conn->query(
-	'SELECT `prodbatch-Id`, `prodbatch-Name`, `recvar-Id`, `prodbatch-Qty`, `prodbatch-Status`
-	 FROM `m3-production_batch` WHERE `prodbatch-Status` NOT IN (\'Cancelled\', \'Finished\')
-	 ORDER BY `prodbatch-Id` DESC'
+	'SELECT b.`prodbatch-Id`, b.`prodbatch-Name`, b.`recvar-Id`, b.`prodbatch-Qty`, b.`prodbatch-Status`,
+	        d.`ccd-Id`, d.`ccd-BaseColor`, d.`ccd-AccentColor`, d.`ccd-Toppings`, d.`ccd-Message`,
+	        d.`ccd-CustomerName`, d.`ccd-PickupDate`, d.`ccd-Notes`
+	 FROM `m3-production_batch` b
+	 LEFT JOIN `m3.1-custom_cake_design` d ON d.`prodbatch-Id` = b.`prodbatch-Id`
+	 WHERE b.`prodbatch-Status` NOT IN (\'Cancelled\', \'Finished\')
+	 ORDER BY b.`prodbatch-Id` DESC'
 );
 while ($row = $result->fetch_assoc()) {
 	$row['ingredients'] = ingredientRows($conn, (string)$row['recvar-Id'], (int)$row['prodbatch-Qty']);
@@ -224,6 +243,7 @@ foreach ($activeBatches as $batch) {
 $message = $_GET['message'] ?? '';
 $messages = [
 	'added' => 'Production batch added to the queue.',
+	'custom_added' => 'Your custom cake was added to the production queue.',
 	'updated' => 'Batch quantity updated.',
 	'cancelled' => 'Production batch cancelled.',
 	'unchanged' => 'That batch is no longer pending.',
@@ -239,6 +259,9 @@ $messages = [
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 	<link rel="stylesheet" href="/cl-test/invtest/nav.css">
+	<style>
+		.cake-dot { display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 50%; vertical-align: -0.1em; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
+	</style>
 </head>
 <body class="bg-body-tertiary">
 <?php include 'nav.php'; ?>
@@ -250,6 +273,7 @@ $messages = [
 			<nav class="nav nav-pills gap-2" aria-label="Production pages">
 				<a class="nav-link border" href="prodform.php"><i class="bi bi-clipboard-check me-1"></i>Production Form</a>
 				<a class="nav-link active" href="prodqueue.php" aria-current="page"><i class="bi bi-list-task me-1"></i>Production Queue</a>
+				<a class="nav-link border" href="cakebuilder.php"><i class="bi bi-cake2 me-1"></i>Cake Builder</a>
 			</nav>
 		</div>
 
@@ -272,7 +296,21 @@ $messages = [
 					<?php else: ?>
 						<?php foreach ($activeBatches as $batch): ?>
 							<tr<?php echo (string)$batch['prodbatch-Id'] === $selectedId ? ' class="table-active"' : ''; ?>>
-								<td><a class="link-primary fw-semibold" href="prodqueue.php?selected=<?php echo rawurlencode((string)$batch['prodbatch-Id']); ?>"><?php echo e($batch['prodbatch-Name']); ?></a></td>
+								<td>
+									<a class="link-primary fw-semibold" href="prodqueue.php?selected=<?php echo rawurlencode((string)$batch['prodbatch-Id']); ?>"><?php echo e($batch['prodbatch-Name']); ?></a>
+									<?php if ($batch['ccd-Id'] !== null): ?>
+										<div class="d-flex flex-wrap align-items-center gap-2 mt-1 small">
+											<span class="badge rounded-pill bg-danger-subtle text-danger-emphasis"><i class="bi bi-cake2 me-1"></i>Custom</span>
+											<span class="d-inline-flex gap-1" aria-hidden="true">
+												<span class="cake-dot" style="background: <?php echo e($batch['ccd-BaseColor']); ?>"></span>
+												<span class="cake-dot" style="background: <?php echo e($batch['ccd-AccentColor']); ?>"></span>
+											</span>
+											<?php if ($batch['ccd-PickupDate'] !== null): ?>
+												<span class="text-body-secondary"><i class="bi bi-calendar-event me-1"></i>Pickup <?php echo e(date('M j, Y', strtotime($batch['ccd-PickupDate']))); ?></span>
+											<?php endif; ?>
+										</div>
+									<?php endif; ?>
+								</td>
 								<td><?php echo e($batch['prodbatch-Qty']); ?></td>
 								<td>
 									<?php if ($batch['sufficient']): ?>
@@ -316,6 +354,45 @@ $messages = [
 				</table>
 			</div>
 		</div>
+
+		<?php if ($selectedBatch !== null && $selectedBatch['ccd-Id'] !== null): ?>
+			<?php $cakeToppings = cakeToppingLabels((string)$selectedBatch['ccd-Toppings']); ?>
+			<div class="card border-0 shadow-sm mb-4">
+				<div class="card-header bg-body border-bottom py-3">
+					<h2 class="h6 mb-0"><i class="bi bi-cake2 text-danger-emphasis me-2"></i>Cake Design: <?php echo e($selectedBatch['prodbatch-Name']); ?></h2>
+				</div>
+				<div class="card-body">
+					<dl class="row mb-0 small">
+						<dt class="col-sm-3 text-body-secondary">Colors</dt>
+						<dd class="col-sm-9">
+							<span class="cake-dot" style="background: <?php echo e($selectedBatch['ccd-BaseColor']); ?>"></span>
+							<?php echo e(cakeColorName((string)$selectedBatch['ccd-BaseColor'])); ?> (<?php echo e($selectedBatch['ccd-BaseColor']); ?>)
+							<span class="mx-2 text-body-tertiary">|</span>
+							<span class="cake-dot" style="background: <?php echo e($selectedBatch['ccd-AccentColor']); ?>"></span>
+							<?php echo e(cakeColorName((string)$selectedBatch['ccd-AccentColor'], true)); ?> accents (<?php echo e($selectedBatch['ccd-AccentColor']); ?>)
+						</dd>
+						<dt class="col-sm-3 text-body-secondary">Toppings</dt>
+						<dd class="col-sm-9">
+							<?php if (count($cakeToppings) === 0): ?>
+								<span class="text-body-secondary">None</span>
+							<?php else: ?>
+								<?php foreach ($cakeToppings as [$label, $icon]): ?>
+									<span class="badge rounded-pill bg-body-secondary text-body-emphasis border me-1"><i class="bi <?php echo e($icon); ?> me-1"></i><?php echo e($label); ?></span>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</dd>
+						<dt class="col-sm-3 text-body-secondary">Message</dt>
+						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-Message'] !== '' ? '&ldquo;' . e($selectedBatch['ccd-Message']) . '&rdquo;' : '<span class="text-body-secondary">No message</span>'; ?></dd>
+						<dt class="col-sm-3 text-body-secondary">Customer</dt>
+						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-CustomerName'] !== null ? e($selectedBatch['ccd-CustomerName']) : '<span class="text-body-secondary">Not given</span>'; ?></dd>
+						<dt class="col-sm-3 text-body-secondary">Pickup date</dt>
+						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-PickupDate'] !== null ? e(date('l, M j, Y', strtotime($selectedBatch['ccd-PickupDate']))) : '<span class="text-body-secondary">Not set</span>'; ?></dd>
+						<dt class="col-sm-3 text-body-secondary">Notes</dt>
+						<dd class="col-sm-9 mb-0" style="white-space: pre-line"><?php echo $selectedBatch['ccd-Notes'] !== null ? e($selectedBatch['ccd-Notes']) : '<span class="text-body-secondary">None</span>'; ?></dd>
+					</dl>
+				</div>
+			</div>
+		<?php endif; ?>
 
 		<?php if ($selectedBatch !== null): ?>
 			<div class="card border-0 shadow-sm">

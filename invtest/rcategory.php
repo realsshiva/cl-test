@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/cake_options.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -31,6 +32,22 @@ require_once __DIR__ . '/db.php';
             if ($result && $result->num_rows > 0) {
                 echo '<div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-4">';
                 while ($row = $result->fetch_assoc()) {
+                    // Custom Cake opens the Cake Builder instead of the plain recipe list.
+                    if ($row['id'] === CAKE_CATEGORY_ID) {
+                        echo '<div class="col">';
+                        echo '<a class="card card-hover h-100 border-0 shadow-sm text-decoration-none" href="/cl-test/invtest/cakebuilder.php">';
+                        echo '<div class="card-body d-flex align-items-center gap-3">';
+                        echo '<span class="icon-tile bg-danger-subtle text-danger-emphasis"><i class="bi bi-cake2"></i></span>';
+                        echo '<div class="flex-grow-1 min-w-0">';
+                        echo '<h2 class="h6 fw-semibold text-body mb-1 text-truncate">' . htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8') . '</h2>';
+                        echo '<small class="text-body-secondary">Design a custom cake <span class="badge rounded-pill bg-danger-subtle text-danger-emphasis ms-1">Builder</span></small>';
+                        echo '</div>';
+                        echo '<i class="bi bi-chevron-right text-body-secondary card-arrow"></i>';
+                        echo '</div>';
+                        echo '</a>';
+                        echo '</div>';
+                        continue;
+                    }
                     // pass the original category id string in the URL (do not cast to int)
                     echo '<div class="col">';
                     echo '<a class="card card-hover h-100 border-0 shadow-sm text-decoration-none" href="/cl-test/invtest/ritem.php?reccat-Id=' . rawurlencode($row['id']) . '">';

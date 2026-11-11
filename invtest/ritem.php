@@ -66,6 +66,11 @@ if ($rcategoryId !== '') {
                     <a href="/cl-test/invtest/rcategory.php" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-left me-1"></i>Back to categories
                     </a>
+                    <?php if ($rcategoryId === 'CAT-CCK'): ?>
+                        <a href="/cl-test/invtest/cakebuilder.php" class="btn btn-outline-danger">
+                            <i class="bi bi-cake2 me-1"></i>Open Cake Builder
+                        </a>
+                    <?php endif; ?>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRecipeModal">
                         <i class="bi bi-plus-lg me-1"></i>Add Item
                     </button>

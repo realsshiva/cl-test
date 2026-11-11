@@ -16,6 +16,7 @@ $navSections = [
     ],
     'Recipes & Production' => [
         ['Recipe Categories', 'rcategory.php', 'bi-journal-richtext', ['rcategory.php', 'ritem.php', 'rmaster.php']],
+        ['Cake Builder', 'cakebuilder.php', 'bi-cake2', ['cakebuilder.php']],
         ['Production Form', 'prodform.php', 'bi-clipboard-check', ['prodform.php', 'prodqueue.php', 'prodlog.php']],
     ],
     'Records' => [

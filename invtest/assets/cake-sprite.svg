@@ -1,0 +1,292 @@
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+<!--
+  Cake Builder artwork (toppings, piping and trims). Inlined into cakebuilder.php and
+  used with <use href="#cb-...">. Each piece is drawn around (0,0):
+  standing pieces have (0,0) at the bottom center, flat pieces at their center.
+  Parts that follow the chosen colors use var(--cb-accent) / var(--cb-accent-dark);
+  the cb-shade-* gradients are white/black overlays, so they work on any color.
+-->
+<defs>
+  <!-- Neutral shading overlays -->
+  <radialGradient id="cbg-sphere" cx=".36" cy=".3" r=".78">
+    <stop offset="0" stop-color="#fff" stop-opacity=".75"/>
+    <stop offset=".28" stop-color="#fff" stop-opacity=".12"/>
+    <stop offset=".7" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity=".32"/>
+  </radialGradient>
+  <linearGradient id="cbg-shade-v" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#fff" stop-opacity=".35"/>
+    <stop offset=".45" stop-color="#fff" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity=".28"/>
+  </linearGradient>
+  <linearGradient id="cbg-shine-h" x1="0" x2="1" y1="0" y2="0">
+    <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+    <stop offset=".5" stop-color="#fff" stop-opacity=".55"/>
+    <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="cbg-contact" cx=".5" cy=".5" r=".5">
+    <stop offset="0" stop-color="#2a1a14" stop-opacity=".35"/>
+    <stop offset="1" stop-color="#2a1a14" stop-opacity="0"/>
+  </radialGradient>
+
+  <!-- Fixed-color materials -->
+  <radialGradient id="cbg-berry" cx=".38" cy=".32" r=".8">
+    <stop offset="0" stop-color="#FF8A8A"/>
+    <stop offset=".45" stop-color="#EE3448"/>
+    <stop offset="1" stop-color="#A20F27"/>
+  </radialGradient>
+  <radialGradient id="cbg-berry-flesh" cx=".5" cy=".55" r=".6">
+    <stop offset="0" stop-color="#FFF4F4"/>
+    <stop offset=".5" stop-color="#FFB3BC"/>
+    <stop offset="1" stop-color="#F0596B"/>
+  </radialGradient>
+  <radialGradient id="cbg-cherry" cx=".36" cy=".3" r=".75">
+    <stop offset="0" stop-color="#FF6F7E"/>
+    <stop offset=".45" stop-color="#D0102F"/>
+    <stop offset="1" stop-color="#650014"/>
+  </radialGradient>
+  <linearGradient id="cbg-leaf" x1="0" x2="1" y1="0" y2="1">
+    <stop offset="0" stop-color="#7BD389"/>
+    <stop offset="1" stop-color="#2E8A45"/>
+  </linearGradient>
+  <linearGradient id="cbg-gold" x1="0" x2="1" y1="0" y2="1">
+    <stop offset="0" stop-color="#FFF3B8"/>
+    <stop offset=".35" stop-color="#EBC45A"/>
+    <stop offset=".7" stop-color="#B98720"/>
+    <stop offset="1" stop-color="#F6DC86"/>
+  </linearGradient>
+  <radialGradient id="cbg-pearl" cx=".35" cy=".3" r=".75">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#F1EEF5"/>
+    <stop offset="1" stop-color="#C6C1D2"/>
+  </radialGradient>
+  <radialGradient id="cbg-flame" cx=".5" cy=".72" r=".7">
+    <stop offset="0" stop-color="#FFF8D2"/>
+    <stop offset=".35" stop-color="#FFD166"/>
+    <stop offset=".75" stop-color="#FF9F1C"/>
+    <stop offset="1" stop-color="#FF6B00"/>
+  </radialGradient>
+  <radialGradient id="cbg-glow" cx=".5" cy=".5" r=".5">
+    <stop offset="0" stop-color="#FFD166" stop-opacity=".6"/>
+    <stop offset="1" stop-color="#FFD166" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="cbg-cream" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#FFFCF4"/>
+    <stop offset="1" stop-color="#EEDDBE"/>
+  </linearGradient>
+  <linearGradient id="cbg-candle" x1="0" x2="1" y1="0" y2="0">
+    <stop offset="0" stop-color="#E4E3EC"/>
+    <stop offset=".4" stop-color="#FFFFFF"/>
+    <stop offset="1" stop-color="#D3D2DD"/>
+  </linearGradient>
+  <radialGradient id="cbg-choc" cx=".42" cy=".3" r=".85">
+    <stop offset="0" stop-color="#8E5A3C"/>
+    <stop offset=".55" stop-color="#5A3423"/>
+    <stop offset="1" stop-color="#361C11"/>
+  </radialGradient>
+  <linearGradient id="cbg-metal" x1="0" x2="1" y1="0" y2="0">
+    <stop offset="0" stop-color="#AEB7C6"/>
+    <stop offset=".38" stop-color="#F6F8FB"/>
+    <stop offset=".7" stop-color="#C9D0DB"/>
+    <stop offset="1" stop-color="#9DA7B8"/>
+  </linearGradient>
+  <linearGradient id="cbg-plate" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset="1" stop-color="#E3E7EE"/>
+  </linearGradient>
+  <linearGradient id="cbg-kraft" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#F2E2C2"/>
+    <stop offset="1" stop-color="#DDBF8A"/>
+  </linearGradient>
+  <linearGradient id="cbg-kraft-front" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#E6CB98"/>
+    <stop offset="1" stop-color="#C9A56B"/>
+  </linearGradient>
+
+  <!-- ===== Standing toppings: (0,0) = bottom center ===== -->
+  <g id="cb-strawberry">
+    <path d="M0,0 C-6,-1 -12,-8 -12,-16 C-12,-22 -7,-25 0,-24 C7,-25 12,-22 12,-16 C12,-8 6,-1 0,0Z" fill="url(#cbg-berry)"/>
+    <g fill="#FFE49A">
+      <ellipse cx="-6" cy="-18" rx=".8" ry="1.3"/><ellipse cx="0" cy="-19.5" rx=".8" ry="1.3"/><ellipse cx="6" cy="-18" rx=".8" ry="1.3"/>
+      <ellipse cx="-8.5" cy="-12" rx=".8" ry="1.3"/><ellipse cx="-3" cy="-13" rx=".8" ry="1.3"/><ellipse cx="3" cy="-13" rx=".8" ry="1.3"/><ellipse cx="8.5" cy="-12" rx=".8" ry="1.3"/>
+      <ellipse cx="-5" cy="-7" rx=".8" ry="1.3"/><ellipse cx="0" cy="-8" rx=".8" ry="1.3"/><ellipse cx="5" cy="-7" rx=".8" ry="1.3"/><ellipse cx="0" cy="-3" rx=".7" ry="1.1"/>
+    </g>
+    <ellipse cx="-5.5" cy="-17" rx="2.4" ry="4.2" fill="#fff" opacity=".35" transform="rotate(-22 -5.5 -17)"/>
+    <path d="M0,-22.5 L-10,-25 L-4.5,-26.5 L-7,-31 L-1.5,-27.5 L0,-33 L1.5,-27.5 L7,-31 L4.5,-26.5 L10,-25 Z" fill="url(#cbg-leaf)"/>
+    <path d="M0,-28 q.8,-4 3.5,-6.5" stroke="#2F7A3D" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <g id="cb-strawberry-half">
+    <path d="M0,0 C-6,-1 -12,-8 -12,-16 C-12,-22 -7,-25 0,-24 C7,-25 12,-22 12,-16 C12,-8 6,-1 0,0Z" fill="#D9223A"/>
+    <path d="M0,-2.2 C-5,-3 -10,-9 -10,-16 C-10,-20.5 -6,-22.6 0,-22 C6,-22.6 10,-20.5 10,-16 C10,-9 5,-3 0,-2.2Z" fill="url(#cbg-berry-flesh)"/>
+    <path d="M0,-5 C-2.6,-9 -3,-15 0,-19.5 C3,-15 2.6,-9 0,-5Z" fill="#FFF6F6" opacity=".9"/>
+    <g fill="#FFE49A"><circle cx="-8.6" cy="-15" r=".7"/><circle cx="8.6" cy="-15" r=".7"/><circle cx="-6.5" cy="-8" r=".7"/><circle cx="6.5" cy="-8" r=".7"/></g>
+    <path d="M-7,-22.5 C-4,-25.5 4,-25.5 7,-22.5 L4,-23.4 L0,-25.6 L-4,-23.4 Z" fill="url(#cbg-leaf)"/>
+  </g>
+
+  <g id="cb-cherry">
+    <path d="M0,-15 C1,-21 4,-26 9,-30" stroke="#6B8E23" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+    <path d="M9,-30 C13,-33.5 17.5,-31.5 18.5,-28 C14.5,-26 11,-27 9,-30Z" fill="url(#cbg-leaf)"/>
+    <circle cx="0" cy="-8" r="8" fill="url(#cbg-cherry)"/>
+    <path d="M-2.6,-15.4 q2.6,1.6 5.2,0" stroke="#6A0014" stroke-opacity=".55" stroke-width="1" fill="none"/>
+    <ellipse cx="-3.2" cy="-11" rx="2.6" ry="1.6" fill="#fff" opacity=".75" transform="rotate(-32 -3.2 -11)"/>
+    <circle cx="3.6" cy="-4" r=".9" fill="#fff" opacity=".45"/>
+  </g>
+
+  <g id="cb-macaron">
+    <path d="M-12,-3 C-12,-6 -10.5,-7.5 -9,-7.5 H9 C10.5,-7.5 12,-6 12,-3 C12,-1 10,0 0,0 C-10,0 -12,-1 -12,-3Z" style="fill:var(--cb-accent)"/>
+    <path d="M-12,-3 C-12,-6 -10.5,-7.5 -9,-7.5 H9 C10.5,-7.5 12,-6 12,-3 C12,-1 10,0 0,0 C-10,0 -12,-1 -12,-3Z" fill="url(#cbg-shade-v)"/>
+    <path d="M-10.8,-7.4 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 Z" style="fill:var(--cb-accent)"/>
+    <path d="M-10.8,-7.4 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 Z" fill="#fff" opacity=".28"/>
+    <rect x="-10.6" y="-13.2" width="21.2" height="4.4" rx="2.2" fill="url(#cbg-cream)"/>
+    <path d="M-10.8,-13 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 Z" style="fill:var(--cb-accent)"/>
+    <path d="M-10.8,-13 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 l1.3,-2 l1.3,2 Z" fill="#fff" opacity=".28"/>
+    <path d="M-12,-16 C-12,-23 -7,-26.5 0,-26.5 C7,-26.5 12,-23 12,-16 C12,-14.6 10,-14.4 0,-14.4 C-10,-14.4 -12,-14.6 -12,-16Z" style="fill:var(--cb-accent)"/>
+    <path d="M-12,-16 C-12,-23 -7,-26.5 0,-26.5 C7,-26.5 12,-23 12,-16 C12,-14.6 10,-14.4 0,-14.4 C-10,-14.4 -12,-14.6 -12,-16Z" fill="url(#cbg-sphere)"/>
+    <ellipse cx="-4.5" cy="-22.3" rx="4.2" ry="1.5" fill="#fff" opacity=".55" transform="rotate(-10 -4.5 -22.3)"/>
+  </g>
+
+  <g id="cb-candle">
+    <ellipse cx="0" cy="-39" rx="12" ry="14" fill="url(#cbg-glow)"/>
+    <rect x="-3.1" y="-30" width="6.2" height="30" rx="1.6" fill="url(#cbg-candle)"/>
+    <path d="M-3.1,-26 L3.1,-29.6 M-3.1,-19 L3.1,-22.6 M-3.1,-12 L3.1,-15.6 M-3.1,-5 L3.1,-8.6" style="stroke:var(--cb-accent)" stroke-width="2.3"/>
+    <path d="M-3.1,-29.2 q1,3.4 2,0 q1,4.6 2.1,0 q1,2.4 2.1,0 V-30 H-3.1Z" fill="#FFFFFF"/>
+    <path d="M0,-30 v-3.6" stroke="#3A3A3A" stroke-width="1.1" stroke-linecap="round"/>
+    <g class="cb-flame">
+      <path d="M0,-48 C4.4,-42.5 5.4,-37.5 0,-33.2 C-5.4,-37.5 -4.4,-42.5 0,-48Z" fill="url(#cbg-flame)"/>
+      <path d="M0,-41.5 C1.9,-39 2.1,-36.4 0,-34.8 C-2.1,-36.4 -1.9,-39 0,-41.5Z" fill="#FFFBE8"/>
+    </g>
+  </g>
+
+  <g id="cb-rose">
+    <path d="M-8,-2 C-15,-2.5 -19.5,-7 -21,-11 C-14.5,-11.5 -10,-7.5 -8,-2Z" fill="url(#cbg-leaf)"/>
+    <path d="M8,-2 C15,-2.5 19.5,-7 21,-11 C14.5,-11.5 10,-7.5 8,-2Z" fill="url(#cbg-leaf)"/>
+    <path d="M-8,-2 C-13,-4.5 -17,-7.5 -19,-10 M8,-2 C13,-4.5 17,-7.5 19,-10" stroke="#2E7A40" stroke-opacity=".6" stroke-width=".8" fill="none"/>
+    <g style="stroke:var(--cb-accent-dark)" stroke-opacity=".55" stroke-width=".8" stroke-linejoin="round">
+      <!-- back cup -->
+      <path d="M-11.5,-9 C-12.5,-18 -5.5,-23 0,-22 C5.5,-23 12.5,-18 11.5,-9 C8,-4 -8,-4 -11.5,-9Z" style="fill:var(--cb-accent)"/>
+      <!-- bud -->
+      <path d="M-6.8,-13.5 C-6.5,-19 6.5,-19 6.8,-13.5 C6,-10 -6,-10 -6.8,-13.5Z" style="fill:var(--cb-accent)"/>
+      <!-- front petals wrapping the bud -->
+      <path d="M-12.5,-10 C-13,-3.5 -6.5,.2 0,-.8 C-3.6,-3.8 -5.2,-8.4 -4.2,-12.6 C-7.6,-13.6 -10.8,-12.6 -12.5,-10Z" style="fill:var(--cb-accent)"/>
+      <path d="M12.5,-10 C13,-3.5 6.5,.2 0,-.8 C3.6,-3.8 5.2,-8.4 4.2,-12.6 C7.6,-13.6 10.8,-12.6 12.5,-10Z" style="fill:var(--cb-accent)"/>
+      <path d="M-6,-7 C-4,-1.8 4,-1.8 6,-7 C2.6,-5.2 -2.6,-5.2 -6,-7Z" style="fill:var(--cb-accent)"/>
+    </g>
+    <path d="M-11.5,-9 C-12.5,-18 -5.5,-23 0,-22 C5.5,-23 12.5,-18 11.5,-9 C8,-4 -8,-4 -11.5,-9Z" fill="#000" opacity=".12"/>
+    <path d="M-12.5,-10 C-13,-3.5 -6.5,.2 0,-.8 C-3.6,-3.8 -5.2,-8.4 -4.2,-12.6 C-7.6,-13.6 -10.8,-12.6 -12.5,-10Z" fill="url(#cbg-shade-v)"/>
+    <path d="M12.5,-10 C13,-3.5 6.5,.2 0,-.8 C3.6,-3.8 5.2,-8.4 4.2,-12.6 C7.6,-13.6 10.8,-12.6 12.5,-10Z" fill="url(#cbg-shade-v)"/>
+    <path d="M-3.2,-14.6 C-2.2,-17 2.8,-17 3,-14 C3,-12.2 -.4,-11.8 -.9,-13.6" fill="none" style="stroke:var(--cb-accent-dark)" stroke-opacity=".8" stroke-width="1.1" stroke-linecap="round"/>
+    <g fill="none" stroke="#fff" stroke-opacity=".55" stroke-width=".9" stroke-linecap="round">
+      <path d="M-11.6,-10.4 C-10,-12.4 -7.4,-13 -5,-12.4"/>
+      <path d="M5.4,-12.6 C8,-13 10.4,-12 11.6,-10.4"/>
+      <path d="M-5.8,-17.6 C-2.6,-19.6 2.6,-19.6 5.8,-17.6"/>
+    </g>
+  </g>
+
+  <!-- ===== Flat pieces: (0,0) = center ===== -->
+  <g id="cb-blossom">
+    <g style="fill:var(--cb-accent)">
+      <ellipse cx="0" cy="-4.6" rx="3.7" ry="5.1"/>
+      <ellipse cx="0" cy="-4.6" rx="3.7" ry="5.1" transform="rotate(72)"/>
+      <ellipse cx="0" cy="-4.6" rx="3.7" ry="5.1" transform="rotate(144)"/>
+      <ellipse cx="0" cy="-4.6" rx="3.7" ry="5.1" transform="rotate(216)"/>
+      <ellipse cx="0" cy="-4.6" rx="3.7" ry="5.1" transform="rotate(288)"/>
+    </g>
+    <g fill="#fff" opacity=".35">
+      <ellipse cx="0" cy="-5.6" rx="1.6" ry="3"/>
+      <ellipse cx="0" cy="-5.6" rx="1.6" ry="3" transform="rotate(72)"/>
+      <ellipse cx="0" cy="-5.6" rx="1.6" ry="3" transform="rotate(144)"/>
+      <ellipse cx="0" cy="-5.6" rx="1.6" ry="3" transform="rotate(216)"/>
+      <ellipse cx="0" cy="-5.6" rx="1.6" ry="3" transform="rotate(288)"/>
+    </g>
+    <circle cx="0" cy="0" r="2.8" fill="#F6C445"/>
+    <circle cx="-.8" cy="-.8" r=".9" fill="#FFF3C4"/>
+  </g>
+
+  <g id="cb-leaf">
+    <path d="M0,0 C3,-4.5 9.5,-5.5 13,-3 C9.5,.5 4,1.8 0,0Z" fill="url(#cbg-leaf)"/>
+    <path d="M.8,-.4 C4.5,-2 8.5,-2.6 12,-2.8" stroke="#2E7A40" stroke-opacity=".6" stroke-width=".7" fill="none"/>
+  </g>
+
+  <g id="cb-pearl">
+    <circle cx="0" cy="0" r="3.6" fill="url(#cbg-pearl)"/>
+    <circle cx="-1.2" cy="-1.3" r=".95" fill="#fff"/>
+  </g>
+
+  <g id="cb-gold-1">
+    <path d="M-5,-3.5 L-1,-6 L4.5,-4.5 L6,0 L3,4.5 L-2.5,5 L-6,1.5 Z" fill="url(#cbg-gold)"/>
+    <path d="M-3,-2 L1,0 L3.5,-2.5 M-1,2.5 L1,0" stroke="#fff" stroke-opacity=".55" stroke-width=".6" fill="none"/>
+  </g>
+  <g id="cb-gold-2">
+    <path d="M-4,-2 L0,-4.5 L3.5,-1.5 L2,3.5 L-3,3 Z" fill="url(#cbg-gold)"/>
+    <path d="M-2,0 L1.5,-1" stroke="#fff" stroke-opacity=".6" stroke-width=".6"/>
+  </g>
+  <g id="cb-gold-3">
+    <path d="M-2.5,-1.5 L1,-2.8 L2.6,.6 L-.4,2.6 Z" fill="url(#cbg-gold)"/>
+  </g>
+
+  <g id="cb-star2d">
+    <path d="M0,-10 L2.9,-3.6 L9.5,-3.1 L4.5,1.4 L5.9,8.1 L0,4.6 L-5.9,8.1 L-4.5,1.4 L-9.5,-3.1 L-2.9,-3.6 Z" style="fill:var(--cb-accent)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M0,-10 L2.9,-3.6 L9.5,-3.1 L4.5,1.4 L5.9,8.1 L0,4.6 L-5.9,8.1 L-4.5,1.4 L-9.5,-3.1 L-2.9,-3.6 Z" fill="url(#cbg-shade-v)"/>
+  </g>
+  <g id="cb-heart2d">
+    <path d="M0,8 C-12,0 -9.5,-9.5 -4.5,-9.5 C-2,-9.5 -.5,-7.5 0,-5.8 C.5,-7.5 2,-9.5 4.5,-9.5 C9.5,-9.5 12,0 0,8Z" style="fill:var(--cb-accent)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M0,8 C-12,0 -9.5,-9.5 -4.5,-9.5 C-2,-9.5 -.5,-7.5 0,-5.8 C.5,-7.5 2,-9.5 4.5,-9.5 C9.5,-9.5 12,0 0,8Z" fill="url(#cbg-shade-v)"/>
+    <ellipse cx="-4.6" cy="-5.6" rx="2" ry="1.2" fill="#fff" opacity=".6" transform="rotate(-30 -4.6 -5.6)"/>
+  </g>
+
+  <!-- ===== Piping and trims ===== -->
+  <!-- Shell: head at (0,0), tail pointing right, about 12 long -->
+  <g id="cb-shell">
+    <path d="M12,0 C7,-2.6 1.5,-6.2 -3,-5.2 C-6.6,-4.2 -6.6,4.2 -3,5.2 C1.5,6.2 7,2.6 12,0Z" style="fill:var(--cb-accent)"/>
+    <path d="M12,0 C7,-2.6 1.5,-6.2 -3,-5.2 C-6.6,-4.2 -6.6,4.2 -3,5.2 C1.5,6.2 7,2.6 12,0Z" fill="url(#cbg-shade-v)"/>
+    <g fill="none" style="stroke:var(--cb-accent-dark)" stroke-opacity=".5" stroke-width=".75" stroke-linecap="round">
+      <path d="M-3.5,-3.8 C1.5,-3 6.5,-1.5 11,0"/>
+      <path d="M-4.6,0 C1,0 6.5,0 11,0"/>
+      <path d="M-3.5,3.8 C1.5,3 6.5,1.5 11,0"/>
+    </g>
+    <ellipse cx="-1.4" cy="-2.6" rx="3" ry="1.1" fill="#fff" opacity=".5"/>
+  </g>
+  <g id="cb-rosette">
+    <circle cx="0" cy="0" r="5" style="fill:var(--cb-accent)"/>
+    <circle cx="0" cy="0" r="5" fill="url(#cbg-sphere)"/>
+    <path d="M-2.9,0 A2.9,2.9 0 1 1 0,2.9 A1.8,1.8 0 1 1 1.3,-.8" fill="none" style="stroke:var(--cb-accent-dark)" stroke-opacity=".6" stroke-width=".95" stroke-linecap="round"/>
+  </g>
+  <g id="cb-bead">
+    <circle cx="0" cy="0" r="4" style="fill:var(--cb-accent)"/>
+    <circle cx="0" cy="0" r="4" fill="url(#cbg-sphere)"/>
+  </g>
+  <g id="cb-bow">
+    <path d="M-1,1 L-7.5,11.5 L-4.2,10.8 L-3,13.6 L1.5,2Z" style="fill:var(--cb-accent-dark)"/>
+    <path d="M1,1 L7.5,11.5 L4.2,10.8 L3,13.6 L-1.5,2Z" style="fill:var(--cb-accent-dark)"/>
+    <path d="M0,0 C-6,-9.5 -16.5,-8.5 -15.5,-1 C-14.5,5.5 -6,4.5 0,0Z" style="fill:var(--cb-accent-dark)"/>
+    <path d="M0,0 C6,-9.5 16.5,-8.5 15.5,-1 C14.5,5.5 6,4.5 0,0Z" style="fill:var(--cb-accent-dark)"/>
+    <path d="M0,0 C-6,-9.5 -16.5,-8.5 -15.5,-1 C-14.5,5.5 -6,4.5 0,0Z M0,0 C6,-9.5 16.5,-8.5 15.5,-1 C14.5,5.5 6,4.5 0,0Z" fill="url(#cbg-shade-v)"/>
+    <path d="M-3,-1 C-7,-4.5 -11,-4 -12,-1 M3,-1 C7,-4.5 11,-4 12,-1" stroke="#000" stroke-opacity=".2" stroke-width=".9" fill="none"/>
+    <ellipse cx="0" cy="0" rx="3.3" ry="3.8" style="fill:var(--cb-accent)"/>
+    <ellipse cx="-.8" cy="-1.2" rx="1.2" ry="1.4" fill="#fff" opacity=".45"/>
+  </g>
+
+  <!-- ===== Topping button icons (viewBox -20 -40 40 44) ===== -->
+  <g id="cb-ico-strawberries"><use href="#cb-strawberry-half" transform="translate(-6 0) scale(.85)"/><use href="#cb-strawberry" transform="translate(6 0) scale(1.05)"/></g>
+  <g id="cb-ico-cherries"><use href="#cb-cherry" transform="translate(-5 0) scale(1.05)"/></g>
+  <g id="cb-ico-macarons"><use href="#cb-macaron" transform="scale(1.3)"/></g>
+  <g id="cb-ico-candles"><use href="#cb-candle" transform="translate(0 2) scale(.82)"/></g>
+  <g id="cb-ico-flowers"><use href="#cb-rose" transform="translate(0 -8) scale(1.25)"/></g>
+  <g id="cb-ico-pearls"><use href="#cb-pearl" transform="translate(-9 -12) scale(1.5)"/><use href="#cb-pearl" transform="translate(0 -12) scale(1.5)"/><use href="#cb-pearl" transform="translate(9 -12) scale(1.5)"/><use href="#cb-pearl" transform="translate(-4.5 -22) scale(1.5)"/><use href="#cb-pearl" transform="translate(4.5 -22) scale(1.5)"/></g>
+  <g id="cb-ico-gold_leaf"><use href="#cb-gold-1" transform="translate(-4 -20) scale(1.7)"/><use href="#cb-gold-2" transform="translate(9 -10) scale(1.4)"/><use href="#cb-gold-3" transform="translate(-10 -6) scale(1.6)"/></g>
+  <g id="cb-ico-chocolate_drip">
+    <path d="M-16,-30 H16 V-20 C16,-17 14,-17 14,-20 V-22 C14,-14 9,-14 9,-22 V-21 C9,-18 6,-18 6,-21 V-22 C6,-8 0,-8 0,-22 V-21 C0,-17 -4,-17 -4,-21 V-22 C-4,-12 -10,-12 -10,-22 V-21 C-10,-19 -13,-19 -13,-21 V-22 C-13,-18 -16,-18 -16,-22 Z" fill="url(#cbg-choc)"/>
+    <path d="M-14,-28 H12" stroke="#fff" stroke-opacity=".35" stroke-width="1.4" stroke-linecap="round"/>
+    <ellipse cx="2.4" cy="-12" rx="1" ry="1.8" fill="#fff" opacity=".35"/>
+  </g>
+  <g id="cb-ico-sprinkles">
+    <rect x="-12" y="-28" width="8" height="2.6" rx="1.3" fill="#FF6B8B" transform="rotate(-30 -8 -27)"/>
+    <rect x="2" y="-30" width="8" height="2.6" rx="1.3" fill="#4CC9F0" transform="rotate(25 6 -29)"/>
+    <rect x="-6" y="-18" width="8" height="2.6" rx="1.3" fill="#FFD166" transform="rotate(70 -2 -17)"/>
+    <rect x="6" y="-16" width="8" height="2.6" rx="1.3" fill="#06D6A0" transform="rotate(-50 10 -15)"/>
+    <rect x="-15" y="-12" width="8" height="2.6" rx="1.3" fill="#B388EB" transform="rotate(15 -11 -11)"/>
+    <circle cx="-1" cy="-8" r="1.8" fill="#FF6B8B"/><circle cx="12" cy="-26" r="1.8" fill="#FFD166"/><circle cx="-14" cy="-24" r="1.8" fill="#06D6A0"/>
+  </g>
+</defs>
+</svg>
