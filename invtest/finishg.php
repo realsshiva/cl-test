@@ -115,6 +115,9 @@ try {
 		<?php if ($message === 'updated'): ?>
 			<div class="alert alert-success" role="status"><i class="bi bi-check-circle me-2"></i>Finished-goods record updated.</div>
 		<?php endif; ?>
+		<?php if ($message === 'dispatch_logged'): ?>
+			<div class="alert alert-success" role="status"><i class="bi bi-check-circle me-2"></i>Dispatch recorded as Pending. Finished-goods stock has not been changed.</div>
+		<?php endif; ?>
 
 		<div class="card border-0 shadow-sm">
 			<div class="table-responsive">
@@ -141,11 +144,13 @@ try {
 											data-expiry="<?php echo e($finishedGood['fgm-ExpiryDate']); ?>">
 											<i class="bi bi-pencil me-1"></i>Edit
 										</button>
-										<span class="d-inline-block" tabindex="0" title="Dispatch will be available in a future part">
-											<button class="btn btn-outline-primary btn-sm" type="button" disabled>
-												<i class="bi bi-truck me-1"></i>Dispatch
-											</button>
-										</span>
+										<button class="btn btn-outline-primary btn-sm dispatch-button" type="button"
+											data-bs-toggle="modal" data-bs-target="#dispatch-modal"
+											data-id="<?php echo e($finishedGood['fgm-Id']); ?>"
+											data-product="<?php echo e($finishedGood['prodbatch-Name']); ?>"
+											data-quantity="<?php echo e($finishedGood['fgm-QtyStock']); ?>">
+											<i class="bi bi-truck me-1"></i>Dispatch
+										</button>
 									</div>
 								</td>
 							</tr>
@@ -188,6 +193,32 @@ try {
 	</div>
 </div>
 
+<div class="modal fade" id="dispatch-modal" tabindex="-1" aria-labelledby="dispatch-title" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<form method="post" action="dispatchlog.php">
+				<div class="modal-header">
+					<h2 class="modal-title fs-5" id="dispatch-title">Dispatch finished goods</h2>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<div class="modal-body">
+					<input type="hidden" name="fgm-Id" id="dispatch-fgm-id">
+					<p id="dispatch-product" class="text-body-secondary mb-2"></p>
+					<p class="mb-3">Available quantity: <strong id="dispatch-available"></strong></p>
+					<div>
+						<label for="dispatch-quantity" class="form-label">Quantity to dispatch</label>
+						<input id="dispatch-quantity" class="form-control" name="dispatch-Qty" type="number" min="1" step="1" required>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+					<button class="btn btn-primary" type="submit"><i class="bi bi-truck me-1"></i>Confirm</button>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <script>
 	// Fill the edit form with the row's data before the Bootstrap modal opens.
@@ -199,6 +230,21 @@ try {
 		document.getElementById('edit-quantity').value = button.dataset.quantity;
 		document.getElementById('edit-expiry').value = button.dataset.expiry;
 	});
+
+	// Fill the dispatch form with the row's data and cap the quantity at what is in stock.
+	const dispatchModal = document.getElementById('dispatch-modal');
+	dispatchModal.addEventListener('show.bs.modal', (event) => {
+		const button = event.relatedTarget;
+		if (!button || !button.classList.contains('dispatch-button')) return;
+		const availableQuantity = button.dataset.quantity;
+		document.getElementById('dispatch-fgm-id').value = button.dataset.id;
+		document.getElementById('dispatch-product').textContent = button.dataset.product;
+		document.getElementById('dispatch-available').textContent = availableQuantity;
+		const quantityInput = document.getElementById('dispatch-quantity');
+		quantityInput.max = availableQuantity;
+		quantityInput.value = '';
+	});
+	dispatchModal.addEventListener('shown.bs.modal', () => document.getElementById('dispatch-quantity').focus());
 </script>
 </body>
 </html>

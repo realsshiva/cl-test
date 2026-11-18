@@ -26,6 +26,7 @@ $navSections = [
     // Hrefs starting with "/" are used as-is, so they can point outside invtest/.
     'Switch System' => [
         ['Point of Sale', '/cl-test/postest/counter.php', 'bi-shop', []],
+        ['Sales', '/cl-test/salestest/dashboard.php', 'bi-graph-up-arrow', []],
     ],
 ];
 ?>

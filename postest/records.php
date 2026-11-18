@@ -8,6 +8,10 @@ $activeViewInput = $_GET['view'] ?? 'dispatches';
 $activeView = is_string($activeViewInput) ? $activeViewInput : 'dispatches';
 
 $views = [
+	'transaction' => [
+		'label' => 'Transaction',
+		'file' => 'transaction.php?embedded=1',
+	],
 	'dispatches' => [
 		'label' => 'Dispatch Records',
 		'file' => 'dprecords.php?embedded=1',
@@ -15,6 +19,10 @@ $views = [
 	'waste' => [
 		'label' => 'Product Waste',
 		'file' => 'pos_waste.php?embedded=1',
+	],
+	'void' => [
+		'label' => 'Void Records',
+		'file' => 'voidrecord.php?embedded=1',
 	],
 ];
 
@@ -35,10 +43,12 @@ if (!isset($views[$activeView])) {
 <body class="bg-body-tertiary">
 	<?php include __DIR__ . '/pos_nav.php'; ?>
 	<?php
-	$viewIcons = ['dispatches' => 'bi-truck', 'waste' => 'bi-trash3'];
+	$viewIcons = ['transaction' => 'bi-receipt', 'dispatches' => 'bi-truck', 'waste' => 'bi-trash3', 'void' => 'bi-x-octagon'];
 	$viewHints = [
+		'transaction' => 'Counter sales (completed and voided). View items, reprint a receipt or void a completed sale.',
 		'dispatches' => 'Dispatches the POS has received or cancelled.',
-		'waste' => 'Product batches that expired and were removed from stock.',
+		'waste' => 'Product stock written off as waste: expired batches and voided items.',
+		'void' => 'Items voided at the counter before checkout or after payment, with the void reason.',
 	];
 	?>
 
@@ -47,7 +57,7 @@ if (!isset($views[$activeView])) {
 			<div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
 				<div>
 					<h1 class="page-title mb-1">Records</h1>
-					<p class="text-body-secondary mb-0">Completed dispatches and expired product stock.</p>
+					<p class="text-body-secondary mb-0">Sales transactions, dispatches, product waste and voids.</p>
 				</div>
 				<a class="btn btn-outline-secondary btn-sm" href="supply.php"><i class="bi bi-truck me-1"></i>Go to Supply</a>
 			</div>

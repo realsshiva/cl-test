@@ -8,18 +8,20 @@ function recordExpiredProductStock(mysqli $conn, ?int $productId = null): void
 
 		if ($productId === null) {
 			$expiredStock = $conn->query(
-				'SELECT `pts-Id`, `pts-Quantity`
-				 FROM `m10.2-product_stock`
-				 WHERE `pts-Expiry` <= CURDATE() AND `pts-Quantity` > 0
-				 ORDER BY `pts-Expiry` ASC, `pts-Id` ASC
+				'SELECT s.`pts-Id`, s.`pts-Quantity`, p.`pti-Price`
+				 FROM `m10.2-product_stock` s
+				 JOIN `m10.1-product_information` p ON p.`pti-Id` = s.`pti-Id`
+				 WHERE s.`pts-Expiry` <= CURDATE() AND s.`pts-Quantity` > 0
+				 ORDER BY s.`pts-Expiry` ASC, s.`pts-Id` ASC
 				 FOR UPDATE'
 			);
 		} else {
 			$expiredStock = $conn->prepare(
-				'SELECT `pts-Id`, `pts-Quantity`
-				 FROM `m10.2-product_stock`
-				 WHERE `pti-Id` = ? AND `pts-Expiry` <= CURDATE() AND `pts-Quantity` > 0
-				 ORDER BY `pts-Expiry` ASC, `pts-Id` ASC
+				'SELECT s.`pts-Id`, s.`pts-Quantity`, p.`pti-Price`
+				 FROM `m10.2-product_stock` s
+				 JOIN `m10.1-product_information` p ON p.`pti-Id` = s.`pti-Id`
+				 WHERE s.`pti-Id` = ? AND s.`pts-Expiry` <= CURDATE() AND s.`pts-Quantity` > 0
+				 ORDER BY s.`pts-Expiry` ASC, s.`pts-Id` ASC
 				 FOR UPDATE'
 			);
 			$expiredStock->bind_param('i', $productId);
@@ -35,12 +37,15 @@ function recordExpiredProductStock(mysqli $conn, ?int $productId = null): void
 		foreach ($stockRows as $stock) {
 			$stockId = (int)$stock['pts-Id'];
 			$expiredQuantity = (int)$stock['pts-Quantity'];
+			$wasteType = 'Expired';
+			$totalCost = number_format((float)$stock['pti-Price'] * $expiredQuantity, 2, '.', '');
 
 			$wasteInsert = $conn->prepare(
-				'INSERT INTO `m10.3-product_waste` (`pts-Id`, `ptw-ExpiredQty`)
-				 VALUES (?, ?)'
+				'INSERT INTO `m10.3-product_waste`
+				 (`pts-Id`, `ptw-WastedQty`, `ptw-WasteType`, `ptw-TotalCost`)
+				 VALUES (?, ?, ?, ?)'
 			);
-			$wasteInsert->bind_param('ii', $stockId, $expiredQuantity);
+			$wasteInsert->bind_param('iiss', $stockId, $expiredQuantity, $wasteType, $totalCost);
 			$wasteInsert->execute();
 			$wasteInsert->close();
 

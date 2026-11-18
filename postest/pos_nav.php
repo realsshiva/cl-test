@@ -18,7 +18,7 @@ $posNavSections = [
     'Stock' => [
         ['Supply', 'supply.php', 'bi-truck', ['supply.php', 'incoming.php']],
         ['Inventory', 'inventory.php', 'bi-boxes', array_merge(['inventory.php', 'pinfo.php'], $posNavInventoryView ? $posNavProductPages : [])],
-        ['Records', 'records.php', 'bi-journal-text', ['records.php', 'dprecords.php', 'pos_waste.php']],
+        ['Records', 'records.php', 'bi-journal-text', ['records.php', 'transaction.php', 'dprecords.php', 'pos_waste.php', 'voidrecord.php']],
     ],
     'Manage' => [
         ['Settings', 'settings.php', 'bi-gear', array_merge(['settings.php'], $posNavInventoryView ? [] : $posNavProductPages)],
@@ -27,6 +27,7 @@ $posNavSections = [
     // Hrefs starting with "/" are used as-is, so they can point outside postest/.
     'Switch System' => [
         ['Bakery Inventory', '/cl-test/invtest/dashboard.php', 'bi-cup-hot', []],
+        ['Sales', '/cl-test/salestest/dashboard.php', 'bi-graph-up-arrow', []],
     ],
 ];
 ?>

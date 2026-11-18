@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/history_log.php';
 require_once __DIR__ . '/cake_options.php';
 
 function e($value): string
@@ -46,11 +47,9 @@ function formatStock(float $baseQuantity, string $unit): string
 	return $value . ' ' . $unit;
 }
 
-function productionItemName(string $productName, string $sizeOrPieces, string $foundation): string
+function productionItemName(string $productName, string $variantType): string
 {
-	$parts = [trim($productName), trim($sizeOrPieces)];
-	$foundation = trim($foundation);
-	if ($foundation !== '') $parts[] = $foundation;
+	$parts = [trim($productName), trim($variantType)];
 	return implode(' | ', $parts);
 }
 
@@ -121,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$error = 'The production selection is incomplete or its batch quantity is invalid.';
 		} else {
 			$validate = $conn->prepare(
-				'SELECT r.`rec-Name`, v.`recvar-SizeOrPcs`, v.`recvar-Foundation` FROM `m222-recipe_variant` v
+				'SELECT r.`rec-Name`, v.`recvar-Type` FROM `m222-recipe_variant3` v
 				 JOIN `m22-recipe_master` r ON r.`rec-Id` = v.`rec-Id`
 				 JOIN `m2-recipe_category` c ON c.`reccat-Id` = r.`reccat-Id`
 				 WHERE v.`recvar-Id` = ? AND r.`rec-Id` = ? AND c.`reccat-Id` = ? LIMIT 1'
@@ -135,11 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			} else {
 				$batchName = productionItemName(
 					(string)$selection['rec-Name'],
-					(string)$selection['recvar-SizeOrPcs'],
-					(string)$selection['recvar-Foundation']
+					(string)$selection['recvar-Type']
 				);
 				if (strlen($batchName) > 60) {
-					$error = 'The product name, size/pieces, and foundation exceed the production batch name limit.';
+					$error = 'The product name and variant type exceed the production batch name limit.';
 				} else {
 					$status = 'Pending';
 					$insert = $conn->prepare('INSERT INTO `m3-production_batch` (`recvar-Id`, `prodbatch-Name`, `prodbatch-Qty`, `prodbatch-Status`) VALUES (?, ?, ?, ?)');
@@ -158,6 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		$update->execute();
 		$changed = $update->affected_rows;
 		$update->close();
+		if ($changed > 0) {
+			recordHistory($conn, null, null, $batchId, null, 'Cancelled Batch', 'Production Queue');
+		}
 		redirectQueue($changed ? 'cancelled' : 'unchanged');
 	} elseif ($action === 'update_batch' && $batchId !== false && $batchId > 0) {
 		$quantity = filter_var($_POST['prodbatch-Qty'] ?? '', FILTER_VALIDATE_INT);
@@ -176,11 +177,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$update->execute();
 			$found = $conn->query('SELECT 1 FROM `m3-production_batch` WHERE `prodbatch-Id` = ' . (int)$batchId . ' AND `prodbatch-Status` = \'Pending\'')->num_rows > 0;
 			$update->close();
+			if ($found) {
+				recordHistory($conn, null, null, $batchId, null, 'Edited Batch', 'Production Queue');
+			}
 			redirectQueue($found ? 'updated' : 'unchanged', (string)$batchId);
 		} else {
 			$lookup = $conn->prepare(
-				'SELECT b.`recvar-Id`, r.`rec-Name`, v.`recvar-SizeOrPcs`, v.`recvar-Foundation` FROM `m3-production_batch` b
-				 JOIN `m222-recipe_variant` v ON v.`recvar-Id` = b.`recvar-Id`
+				'SELECT b.`recvar-Id`, r.`rec-Name`, v.`recvar-Type` FROM `m3-production_batch` b
+				 JOIN `m222-recipe_variant3` v ON v.`recvar-Id` = b.`recvar-Id`
 				 JOIN `m22-recipe_master` r ON r.`rec-Id` = v.`rec-Id`
 				 WHERE b.`prodbatch-Id` = ? AND b.`prodbatch-Status` = \'Pending\' LIMIT 1'
 			);
@@ -193,16 +197,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			} else {
 				$batchName = productionItemName(
 					(string)$batch['rec-Name'],
-					(string)$batch['recvar-SizeOrPcs'],
-					(string)$batch['recvar-Foundation']
+					(string)$batch['recvar-Type']
 				);
 				if (strlen($batchName) > 60) {
-					$error = 'The product name, size/pieces, and foundation exceed the production batch name limit.';
+					$error = 'The product name and variant type exceed the production batch name limit.';
 				} else {
 					$update = $conn->prepare('UPDATE `m3-production_batch` SET `prodbatch-Name` = ?, `prodbatch-Qty` = ? WHERE `prodbatch-Id` = ? AND `prodbatch-Status` = \'Pending\'');
 					$update->bind_param('sii', $batchName, $quantity, $batchId);
 					$update->execute();
+					$edited = $update->affected_rows > 0;
 					$update->close();
+					if (!$edited) {
+						$check = $conn->prepare('SELECT 1 FROM `m3-production_batch` WHERE `prodbatch-Id` = ? AND `prodbatch-Status` = \'Pending\' LIMIT 1');
+						$check->bind_param('i', $batchId);
+						$check->execute();
+						$edited = $check->get_result()->num_rows > 0;
+						$check->close();
+					}
+					if ($edited) {
+						recordHistory($conn, null, null, $batchId, null, 'Edited Batch', 'Production Queue');
+					}
 					redirectQueue('updated', (string)$batchId);
 				}
 			}

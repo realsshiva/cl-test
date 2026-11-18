@@ -44,8 +44,8 @@ if ($batchId === false || $batchId < 1) {
 		&& $date->format('Y-m-d') === $expiryDate
 		&& ($dateErrors === false || ($dateErrors['warning_count'] === 0 && $dateErrors['error_count'] === 0));
 
-	if ($successValue === false || $successValue < 0 || $errorValue === false || $errorValue < 0) {
-		$error = 'Success and Error must be whole numbers greater than or equal to zero.';
+	if ($successValue === false || $successValue < 0 || $successValue > 32767 || $errorValue === false || $errorValue < 0) {
+		$error = 'Success must be a whole number from 0 to 32767, and Error must be a whole number greater than or equal to zero.';
 	} elseif ($successValue + $errorValue === 0) {
 		$error = 'Enter at least one successful or errored item.';
 	} elseif (!$dateIsValid) {
@@ -59,8 +59,10 @@ if ($batchId === false || $batchId < 1) {
 			$transactionStarted = true;
 
 			$lookup = $conn->prepare(
-				'SELECT `prodbatch-Qty`, `recvar-Id` FROM `m3-production_batch`
-				 WHERE `prodbatch-Id` = ? AND `prodbatch-Status` = \'Pending\' FOR UPDATE'
+				'SELECT b.`prodbatch-Qty`, b.`recvar-Id`, v.`recvar-RecCost`
+				 FROM `m3-production_batch` b
+				 JOIN `m222-recipe_variant3` v ON v.`recvar-Id` = b.`recvar-Id`
+				 WHERE b.`prodbatch-Id` = ? AND b.`prodbatch-Status` = \'Pending\' FOR UPDATE'
 			);
 			$lookup->bind_param('i', $batchId);
 			$lookup->execute();
@@ -162,7 +164,33 @@ if ($batchId === false || $batchId < 1) {
 					);
 					$insert->bind_param('iiiss', $batchId, $successValue, $errorValue, $expiryDate, $reason);
 					$insert->execute();
+					$productionLogId = (int)$conn->insert_id;
 					$insert->close();
+
+					if ($errorValue > 0) {
+						$unitCost = (float)($batch['recvar-RecCost'] ?? 0);
+						$totalCost = $unitCost * $errorValue;
+						$wasteReason = $reason !== '' ? $reason : 'Production error';
+						$wasteInsert = $conn->prepare(
+							'INSERT INTO `m5-waste_log`
+							 (`prodlog-Id`, `waste-Qty`, `waste-UnitCost`, `waste-TotalCost`, `waste-Reason`)
+							 VALUES (?, ?, ?, ?, ?)'
+						);
+						$wasteInsert->bind_param('iidds', $productionLogId, $errorValue, $unitCost, $totalCost, $wasteReason);
+						$wasteInsert->execute();
+						$wasteInsert->close();
+					}
+
+					if ($successValue > 0) {
+						$finishedGoodsInsert = $conn->prepare(
+							'INSERT INTO `m4-finishedgoods_master`
+							 (`prodlog-Id`, `fgm-QtyStock`, `fgm-ExpiryDate`, `fgm-Status`)
+							 VALUES (?, ?, ?, CASE WHEN ? <= CURDATE() THEN \'Expired\' ELSE \'In-Stock\' END)'
+						);
+						$finishedGoodsInsert->bind_param('iiss', $productionLogId, $successValue, $expiryDate, $expiryDate);
+						$finishedGoodsInsert->execute();
+						$finishedGoodsInsert->close();
+					}
 
 					$finishedStatus = 'Finished';
 					$update = $conn->prepare(
