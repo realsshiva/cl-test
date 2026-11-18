@@ -20,7 +20,18 @@ if ($productId === false || $productId < 1) {
 
 $productQuery = $conn->prepare(
 	'SELECT p.`pti-Id`, p.`pti-Name`, p.`pti-Variant`, p.`pti-Price`,
-	        p.`ptc-Id`, c.`ptc-Category`
+	        p.`ptc-Id`, c.`ptc-Category`,
+	        NOT EXISTS (
+	            SELECT 1
+	            FROM `m22-recipe_master` r
+	            LEFT JOIN `m222-recipe_variant3` v ON v.`rec-Id` = r.`rec-Id`
+	            WHERE r.`reccat-Id` = c.`reccat-Id`
+	              AND r.`rec-Name` = p.`pti-Name`
+	              AND (
+	                  (v.`recvar-Id` IS NULL AND p.`pti-Variant` IS NULL)
+	                  OR v.`recvar-Type` <=> p.`pti-Variant`
+	              )
+	        ) AS `is-external`
 	 FROM `m10.1-product_information` p
 	 LEFT JOIN `m10-product_category` c ON c.`ptc-Id` = p.`ptc-Id`
 	 WHERE p.`pti-Id` = ?
@@ -36,13 +47,78 @@ if (!$product) {
 	exit('Product not found.');
 }
 
+$error = '';
+$stockQuantityInput = '';
+$stockExpiryInput = '';
+$openStockDialog = false;
+$stockAdded = ($_GET['stock-added'] ?? '') === '1';
+$canAddStock = (bool)$product['is-external'];
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+	$actionInput = $_POST['action'] ?? '';
+	$quantityInput = $_POST['pts-Quantity'] ?? '';
+	$expiryInput = $_POST['pts-Expiry'] ?? '';
+	$action = is_string($actionInput) ? $actionInput : '';
+	$stockQuantityInput = is_string($quantityInput) ? trim($quantityInput) : '';
+	$stockExpiryInput = is_string($expiryInput) ? trim($expiryInput) : '';
+	$openStockDialog = true;
+
+	if ($action !== 'add_stock') {
+		$error = 'Choose a valid stock action.';
+	} elseif (!$canAddStock) {
+		http_response_code(403);
+		$error = 'Stock can only be added manually for external POS products.';
+	} else {
+		$quantity = filter_var(
+			$stockQuantityInput,
+			FILTER_VALIDATE_INT,
+			['options' => ['min_range' => 1, 'max_range' => 2147483647]]
+		);
+		if ($quantity === false) {
+			$error = 'Quantity must be a whole number greater than zero.';
+		} else {
+			$expiryDate = DateTimeImmutable::createFromFormat('!Y-m-d', $stockExpiryInput);
+			$dateErrors = DateTimeImmutable::getLastErrors();
+			if ($expiryDate === false
+				|| $expiryDate->format('Y-m-d') !== $stockExpiryInput
+				|| ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))
+				|| $expiryDate <= new DateTimeImmutable('today')) {
+				$error = 'Enter a valid expiration date after today.';
+			} else {
+				try {
+					$stockInsert = $conn->prepare(
+						'INSERT INTO `m10.2-product_stock`
+						 (`pti-Id`, `pts-Quantity`, `pts-Expiry`)
+						 VALUES (?, ?, ?)'
+					);
+					$stockQuantityExpiry = $expiryDate->format('Y-m-d');
+					$stockInsert->bind_param('iis', $productId, $quantity, $stockQuantityExpiry);
+					$stockInsert->execute();
+					$stockInsert->close();
+
+					$redirect = 'pinfo.php?pti-Id=' . rawurlencode((string)$productId) . '&stock-added=1';
+					if ($embedded) {
+						$redirect .= '&embedded=1';
+					}
+					header('Location: ' . $redirect);
+					exit;
+				} catch (mysqli_sql_exception $exception) {
+					$error = 'Stock could not be saved: ' . $exception->getMessage();
+				}
+			}
+		}
+	}
+}
+
 try {
 	recordExpiredProductStock($conn, (int)$productId);
 	$stockQuery = $conn->prepare(
 		'SELECT `pts-Id`, `pts-Quantity`, `pts-Expiry`,
-		        CASE WHEN `pts-Expiry` <= CURDATE() THEN \'Expired\' ELSE \'In Stock\' END AS `stock-status`
+		        \'In Stock\' AS `stock-status`
 		 FROM `m10.2-product_stock`
 		 WHERE `pti-Id` = ?
+		   AND (`pts-Expiry` IS NULL OR `pts-Expiry` > CURDATE())
+		   AND `pts-Quantity` > 0
 		 ORDER BY `pts-Expiry` IS NULL, `pts-Expiry` ASC, `pts-Id` DESC'
 	);
 	$stockQuery->bind_param('i', $productId);
@@ -101,10 +177,23 @@ $categoryUrl = $product['ptc-Id'] !== null
 					<?php endif; ?>
 				</div>
 				<div class="d-flex flex-wrap gap-2">
+					<?php if ($canAddStock): ?>
+						<button class="btn btn-primary btn-sm" id="open-stock-dialog" type="button" data-bs-toggle="modal" data-bs-target="#stock-dialog"><i class="bi bi-plus-lg me-1"></i>Add Stock</button>
+					<?php endif; ?>
 					<a class="btn btn-outline-secondary btn-sm" href="<?php echo e($categoryUrl); ?>"><i class="bi bi-arrow-left me-1"></i>Back to Inventory</a>
 					<a class="btn btn-outline-danger btn-sm" href="pos_waste.php"<?php echo $embedded ? ' target="_top"' : ''; ?>><i class="bi bi-trash3 me-1"></i>Expired Stock</a>
 				</div>
 			</div>
+
+			<?php if ($error !== '' && !$canAddStock): ?>
+				<div class="alert alert-danger" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($error); ?></div>
+			<?php endif; ?>
+			<?php if ($stockAdded): ?>
+				<div class="alert alert-success alert-dismissible fade show" role="status">
+					<i class="bi bi-check-circle me-2"></i>Stock batch added.
+					<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+				</div>
+			<?php endif; ?>
 
 			<div class="row row-cols-1 row-cols-sm-3 g-3 mb-4">
 				<div class="col">
@@ -175,6 +264,43 @@ $categoryUrl = $product['ptc-Id'] !== null
 		</div>
 	</main>
 
+	<?php if ($canAddStock): ?>
+		<div class="modal fade" id="stock-dialog" tabindex="-1" aria-labelledby="stock-dialog-title" aria-hidden="true">
+			<div class="modal-dialog modal-dialog-centered">
+				<form class="modal-content" method="post">
+					<input type="hidden" name="action" value="add_stock">
+					<div class="modal-header">
+						<h2 class="modal-title h5" id="stock-dialog-title"><i class="bi bi-plus-square me-2"></i>Add Stock</h2>
+						<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+					</div>
+					<div class="modal-body">
+						<?php if ($error !== ''): ?>
+							<div class="alert alert-danger py-2" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($error); ?></div>
+						<?php endif; ?>
+						<div class="mb-3">
+							<label for="stock-quantity" class="form-label">Quantity</label>
+							<input id="stock-quantity" class="form-control" name="pts-Quantity" type="number" min="1" step="1" value="<?php echo e($stockQuantityInput); ?>" required>
+						</div>
+						<div>
+							<label for="stock-expiry" class="form-label">Expiration Date</label>
+							<input id="stock-expiry" class="form-control" name="pts-Expiry" type="date" min="<?php echo e((new DateTimeImmutable('tomorrow'))->format('Y-m-d')); ?>" value="<?php echo e($stockExpiryInput); ?>" required>
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button class="btn btn-outline-secondary" id="cancel-stock-dialog" type="button" data-bs-dismiss="modal">Cancel</button>
+						<button class="btn btn-primary" type="submit"><i class="bi bi-check-lg me-1"></i>Save</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	<?php endif; ?>
+
 	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+	<?php if ($canAddStock && $openStockDialog): ?>
+		<script>
+			// Reopen the form after a failed save so the error and entered values are visible.
+			bootstrap.Modal.getOrCreateInstance(document.getElementById('stock-dialog')).show();
+		</script>
+	<?php endif; ?>
 </body>
 </html>

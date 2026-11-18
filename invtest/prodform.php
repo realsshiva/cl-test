@@ -52,7 +52,7 @@ if ($result) {
 }
 
 $variants = [];
-$result = $conn->query('SELECT `recvar-Id`, `rec-Id`, `recvar-SizeOrPcs`, `recvar-Foundation` FROM `m222-recipe_variant` ORDER BY `recvar-SizeOrPcs`, `recvar-Foundation`');
+$result = $conn->query('SELECT `recvar-Id`, `rec-Id`, `recvar-Type` FROM `m222-recipe_variant3` ORDER BY `recvar-Type`, `recvar-Id`');
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $variants[] = $row;
@@ -76,7 +76,7 @@ foreach ($recipes as $recipe) {
 }
 foreach ($variants as $variant) {
     if ($variant['recvar-Id'] === $variantId) {
-        $variantName = trim($variant['recvar-SizeOrPcs'] . ($variant['recvar-Foundation'] !== '' ? ' | ' . $variant['recvar-Foundation'] : ''));
+        $variantName = $variant['recvar-Type'];
         break;
     }
 }
@@ -84,7 +84,7 @@ foreach ($variants as $variant) {
 $ingredients = [];
 if ($isLoaded) {
     if ($categoryId === '' || $recipeId === '' || $variantId === '' || $batchQuantity <= 0) {
-        $error = 'Choose a category, product, size/pieces, and enter a batch quantity greater than zero.';
+        $error = 'Choose a category, product, variant, and enter a batch quantity greater than zero.';
     } else {
         $query = $conn->prepare(
             'SELECT ri.`recing-QtyNeed`, ri.`recing-UnitType`, ri.`ingmaster-Id`, im.`ingmaster-Name`, im.`ingmaster-UnitType`
@@ -176,15 +176,11 @@ if ($isLoaded) {
                                 </select>
                             </div>
                             <div class="col-12 col-md-6">
-                                <label for="variant" class="form-label">Size/Pieces and Foundation</label>
+                                <label for="variant" class="form-label">Variant</label>
                                 <select id="variant" class="form-select" name="recvar-Id" required>
-                                    <option value="">Select size/pieces and foundation</option>
-                                    <?php $shownVariantLabels = []; ?>
+                                    <option value="">Select variant</option>
                                     <?php foreach ($variants as $variant): ?>
-                                        <?php $variantLabel = trim($variant['recvar-SizeOrPcs'] . ($variant['recvar-Foundation'] !== '' ? ' | ' . $variant['recvar-Foundation'] : '')); ?>
-                                        <?php if (isset($shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel])) continue; ?>
-                                        <?php $shownVariantLabels[$variant['rec-Id'] . '|' . $variantLabel] = true; ?>
-                                        <option value="<?php echo e($variant['recvar-Id']); ?>" data-recipe="<?php echo e($variant['rec-Id']); ?>" <?php echo $variantId === $variant['recvar-Id'] ? 'selected' : ''; ?>><?php echo e($variantLabel); ?></option>
+                                        <option value="<?php echo e($variant['recvar-Id']); ?>" data-recipe="<?php echo e($variant['rec-Id']); ?>" <?php echo $variantId === $variant['recvar-Id'] ? 'selected' : ''; ?>><?php echo e($variant['recvar-Type']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>

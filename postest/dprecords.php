@@ -7,9 +7,68 @@ function e($value): string
 }
 
 $embedded = ($_GET['embedded'] ?? '') === '1';
+$rangeInput = $_GET['range'] ?? 'today';
+$range = is_string($rangeInput) ? $rangeInput : 'today';
+$dateInput = $_GET['date'] ?? '';
+$selectedDate = is_string($dateInput) ? $dateInput : '';
+$loadError = '';
+$dateError = '';
+$today = new DateTimeImmutable('today');
 
 try {
-	$dispatchRecords = $conn->query(
+	$databaseDateResult = $conn->query('SELECT CURDATE() AS `today`');
+	$databaseDate = $databaseDateResult->fetch_assoc();
+	if (!$databaseDate || !isset($databaseDate['today'])) {
+		throw new RuntimeException('The database did not return its current date.');
+	}
+	$today = new DateTimeImmutable((string)$databaseDate['today']);
+} catch (mysqli_sql_exception | RuntimeException $exception) {
+	error_log('Dispatch records date lookup error: ' . $exception->getMessage());
+	http_response_code(500);
+	$loadError = 'Dispatch records could not be loaded. Please try again.';
+}
+
+if ($range === 'day' && $selectedDate !== '') {
+	$parsedDate = DateTimeImmutable::createFromFormat('!Y-m-d', $selectedDate);
+	$dateProblems = DateTimeImmutable::getLastErrors();
+	if (!$parsedDate || ($dateProblems !== false && ($dateProblems['warning_count'] > 0 || $dateProblems['error_count'] > 0))
+		|| $parsedDate->format('Y-m-d') !== $selectedDate) {
+		$dateError = 'Choose a valid date.';
+		$range = 'today';
+		$selectedDate = '';
+	} else {
+		$selectedDate = $parsedDate->format('Y-m-d');
+	}
+}
+
+if (!in_array($range, ['today', 'week', 'month', 'day'], true)) {
+	$range = 'today';
+}
+
+if ($range === 'week') {
+	$startDate = $today->modify('monday this week');
+	$endDate = $startDate->modify('+1 week');
+	$periodLabel = 'This Week';
+} elseif ($range === 'month') {
+	$startDate = $today->modify('first day of this month');
+	$endDate = $startDate->modify('+1 month');
+	$periodLabel = 'This Month';
+} elseif ($range === 'day' && $selectedDate !== '') {
+	$startDate = new DateTimeImmutable($selectedDate);
+	$endDate = $startDate->modify('+1 day');
+	$periodLabel = $startDate->format('F j, Y');
+} else {
+	$range = 'today';
+	$startDate = $today;
+	$endDate = $today->modify('+1 day');
+	$periodLabel = 'Today';
+}
+
+$dispatchRecords = [];
+
+if ($loadError === '') {
+	try {
+		$dispatchRecordsQuery = $conn->prepare(
 		'SELECT dr.`dr-Id`, dr.`dr-Timestamp`, dr.`dr-ReceivedQty`,
 		        dr.`dr-ExpiryDate`, dr.`dr-Status`, dl.`dl-QtyToSend`,
 		        r.`rec-Name`, v.`recvar-Type`
@@ -20,11 +79,23 @@ try {
 		   ON v.`recvar-Id` = dl.`dl-RecipeVariant` AND v.`rec-Id` = dl.`rec-Id`
 		 WHERE dr.`dr-Status` IN (\'Received\', \'Cancelled\')
 		   AND dl.`dl-Status` IN (\'Received\', \'Cancelled\')
+		   AND dr.`dr-Timestamp` >= ? AND dr.`dr-Timestamp` < ?
 		 ORDER BY dr.`dr-Timestamp` DESC, dr.`dr-Id` DESC'
-	);
-} catch (mysqli_sql_exception $exception) {
-	http_response_code(500);
-	die('Dispatch records could not be loaded: ' . e($exception->getMessage()));
+		);
+		$startDateTime = $startDate->format('Y-m-d 00:00:00');
+		$endDateTime = $endDate->format('Y-m-d 00:00:00');
+		$dispatchRecordsQuery->bind_param('ss', $startDateTime, $endDateTime);
+		$dispatchRecordsQuery->execute();
+		$dispatchResult = $dispatchRecordsQuery->get_result();
+		while ($record = $dispatchResult->fetch_assoc()) {
+			$dispatchRecords[] = $record;
+		}
+		$dispatchRecordsQuery->close();
+	} catch (mysqli_sql_exception $exception) {
+		error_log('Dispatch records query error: ' . $exception->getMessage());
+		http_response_code(500);
+		$loadError = 'Dispatch records could not be loaded. Please try again.';
+	}
 }
 ?>
 <!DOCTYPE html>
@@ -45,6 +116,8 @@ try {
 	$statusBadges = ['Received' => 'text-bg-success', 'Cancelled' => 'text-bg-secondary'];
 	// Inside the Records frame, these links open the full page instead of nesting it in the frame.
 	$linkTarget = $embedded ? ' target="_top"' : '';
+	$filterBase = 'dprecords.php?' . ($embedded ? 'embedded=1&' : '');
+	$rangeLinks = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Month'];
 	?>
 
 	<main class="<?php echo $embedded ? '' : 'app-main'; ?>">
@@ -60,7 +133,34 @@ try {
 				</div>
 			</div>
 
+			<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+				<nav class="nav nav-pills gap-1" aria-label="Filter dispatch records">
+					<?php foreach ($rangeLinks as $rangeKey => $rangeLabel): ?>
+						<a class="nav-link py-1 px-3<?php echo $range === $rangeKey ? ' active' : ' border bg-body'; ?>"
+							href="<?php echo e($filterBase . 'range=' . $rangeKey); ?>"
+							<?php echo $range === $rangeKey ? 'aria-current="page"' : ''; ?>><?php echo e($rangeLabel); ?></a>
+					<?php endforeach; ?>
+				</nav>
+				<form class="d-flex flex-wrap align-items-center gap-2 ms-lg-2" method="get" action="dprecords.php">
+					<?php if ($embedded): ?><input type="hidden" name="embedded" value="1"><?php endif; ?>
+					<input type="hidden" name="range" value="day">
+					<label for="dispatch-date" class="small text-body-secondary">Date</label>
+					<input id="dispatch-date" class="form-control form-control-sm w-auto<?php echo $range === 'day' ? ' border-primary' : ''; ?>" name="date" type="date" value="<?php echo e($range === 'day' ? $selectedDate : ''); ?>" required>
+					<button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-calendar-event me-1"></i>Show Date</button>
+				</form>
+			</div>
+
+			<?php if ($dateError !== ''): ?>
+				<div class="alert alert-warning py-2" role="alert"><i class="bi bi-exclamation-triangle me-2"></i><?php echo e($dateError); ?></div>
+			<?php endif; ?>
+			<?php if ($loadError !== ''): ?>
+				<div class="alert alert-danger py-2" role="alert"><i class="bi bi-exclamation-octagon me-2"></i><?php echo e($loadError); ?></div>
+			<?php endif; ?>
+
 			<div class="card border-0 shadow-sm">
+				<div class="card-header bg-body small text-body-secondary">
+					<i class="bi bi-calendar3 me-1"></i>Showing: <span class="fw-semibold text-body"><?php echo e($periodLabel); ?></span>
+				</div>
 				<div class="table-responsive">
 					<table class="table table-hover align-middle mb-0">
 						<thead class="table-light">
@@ -75,10 +175,12 @@ try {
 							</tr>
 						</thead>
 						<tbody>
-						<?php if ($dispatchRecords->num_rows === 0): ?>
-							<tr><td colspan="7" class="text-center text-body-secondary py-5"><i class="bi bi-inbox d-block fs-2 mb-2"></i>There are no received or cancelled dispatch records.</td></tr>
+						<?php if ($loadError !== ''): ?>
+							<tr><td colspan="7" class="text-center text-body-secondary py-5"><i class="bi bi-exclamation-circle d-block fs-2 mb-2"></i>Dispatch records are unavailable.</td></tr>
+						<?php elseif (!$dispatchRecords): ?>
+							<tr><td colspan="7" class="text-center text-body-secondary py-5"><i class="bi bi-inbox d-block fs-2 mb-2"></i>There are no received or cancelled dispatch records for this period.</td></tr>
 						<?php else: ?>
-							<?php while ($record = $dispatchRecords->fetch_assoc()): ?>
+							<?php foreach ($dispatchRecords as $record): ?>
 								<tr>
 									<td class="text-nowrap"><?php echo e($record['dr-Timestamp']); ?></td>
 									<td class="fw-medium"><?php echo e($record['rec-Name']); ?></td>
@@ -88,13 +190,13 @@ try {
 									<td class="text-nowrap"><?php echo e($record['dr-ExpiryDate']); ?></td>
 									<td><span class="badge <?php echo $statusBadges[$record['dr-Status']] ?? 'text-bg-light'; ?>"><?php echo e($record['dr-Status']); ?></span></td>
 								</tr>
-							<?php endwhile; ?>
+							<?php endforeach; ?>
 						<?php endif; ?>
 						</tbody>
 					</table>
 				</div>
-				<?php if ($dispatchRecords->num_rows > 0): ?>
-					<div class="card-footer bg-body small text-body-secondary">Showing <?php echo number_format($dispatchRecords->num_rows); ?> records</div>
+				<?php if ($dispatchRecords): ?>
+					<div class="card-footer bg-body small text-body-secondary">Showing <?php echo number_format(count($dispatchRecords)); ?> records</div>
 				<?php endif; ?>
 			</div>
 		</div>
