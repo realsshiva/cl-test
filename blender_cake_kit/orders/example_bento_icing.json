@@ -1,0 +1,10 @@
+{
+  "recipe_name": "Bento Custom Cake",
+  "size": "4x2.2",
+  "finish": "Icing 2D",
+  "base_color": "#FBE7A1",
+  "accent_color": "#E8738A",
+  "toppings": ["cherries", "sprinkles"],
+  "message": "Love you",
+  "render": {"views": ["hero"], "message_placement": "top"}
+}

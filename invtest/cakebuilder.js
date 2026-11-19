@@ -1,6 +1,7 @@
-// cakebuilder.js: step flow, live SVG cake preview and the little game effects
-// for cakebuilder.php. The form inputs are the single source of truth; the preview
-// and summary are redrawn from them after every change.
+// cakebuilder.js: step flow, live cake preview and the little game effects for cakebuilder.php.
+// The cake itself is drawn by cakedraw.js. The form inputs are the single source of truth, plus
+// `layout` (where the toppings and the message sit), which is mirrored into the hidden "layout" input.
+// The preview and summary are redrawn from them after every change.
 (() => {
     'use strict';
 
@@ -8,7 +9,13 @@
     if (!form) return;
 
     const data = JSON.parse(document.getElementById('cb-data').textContent);
+    const CD = window.CakeDraw;
+    CD.init(data.renders);
+    const { hexToRgb, mix, SPRINKLES } = CD;
     const recipes = new Map(data.recipes.map((r) => [r.id, r]));
+    // Every color the customer can set: base, base2, accent, trim, drip, board, ink.
+    const GROUPS = Object.keys(data.colorGroups);
+    const COLOR_STEP = 3;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -26,14 +33,19 @@
         submit: $('#cb-submit'),
         sizes: $('#cb-sizes'),
         finishes: $('#cb-finishes'),
-        notReady: $('#cb-not-ready'),
         colorNames: $('#cb-color-names'),
         toppingCount: $('#cb-topping-count'),
         message: $('#cb-message'),
         messageCount: $('#cb-message-count'),
         summary: $('#cb-summary'),
         qty: $('#cb-qty'),
-        toppingStep: $('.cb-step[data-step="4"]'),
+        layout: $('#cb-layout'),
+        piping: $('#cb-piping'),
+        pieceBar: $('#cb-piece-bar'),
+        pieceName: $('#cb-piece-name'),
+        dragHint: $('#cb-drag-hint'),
+        undo: $('#cb-undo'),
+        redo: $('#cb-redo'),
     };
 
     const LAST_STEP = els.sections.length - 1;
@@ -56,6 +68,20 @@
     const completed = new Set();
     let previous = { geometry: '', toppings: new Set() };
 
+    const DEFAULT_DRIP = '#5A3423';
+    const PIECE_NAMES = { strawberries: 'Strawberry', cherries: 'Cherry', macarons: 'Macaron', flowers: 'Rose', candles: 'Candle' };
+    const SIZE_RANGE = [0.6, 1.6];
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const r3 = (n) => Math.round(n * 1000) / 1000;
+
+    // Where the movable toppings and the message sit. items: [{k: topping, u, v, s: size}] with (u, v) a
+    // spot on the top of the cake, each -1 to 1; msg: how far the message was moved (-1 to 1) and its size;
+    // photo: the picture printed on top ({id, u, v, s}) or null.
+    const blankLayout = () => ({ items: [], msg: { dx: 0, dy: 0, size: 1 }, photo: null });
+    let layout = blankLayout();
+    let selected = null;   // what is selected on the cake: an index into layout.items, 'msg', 'photo' or null
+    let lastInk = '#9B2C5C';
+
     // ---------- Reading the form ----------
     const checkedValue = (name) => {
         const input = form.querySelector(`input[name="${name}"]:checked`);
@@ -67,16 +93,74 @@
         const recipe = recipes.get(checkedValue('rec-Id')) || null;
         const size = recipe ? recipe.sizes.find((s) => s.label === checkedValue('size')) || null : null;
         const finish = size ? size.finishes.find((f) => f.id === checkedValue('recvar-Id')) || null : null;
+        const colors = Object.fromEntries(GROUPS.map((g) => [g, checkedValue(`${g}-color`)]));
+        const tierCount = recipe ? CD.tierCount(recipe.tiers, size ? size.label : '') : 1;
+        let style = checkedValue('cake-style') || 'solid';
+        if (style === 'tiers' && tierCount < 2) style = 'solid';
+        if (style !== 'solid' && !colors.base2) style = 'solid';
         return {
             recipe,
             size,
             finish,
-            base: checkedValue('base-color'),
-            accent: checkedValue('accent-color'),
+            base: colors.base,
+            accent: colors.accent,
+            colors,              // as chosen: a hex code, 'auto' or '' (nothing picked)
+            style,               // solid | ombre | tiers, already checked against this cake
+            tierCount,
+            piping: checkedValue('piping') || 'rosette',
+            font: checkedValue('msg-font') || 'script',
+            // A different finish for the upper tier (two-tier cakes), by name; '' = same as the rest.
+            finish2: tierCount > 1 && finish && size.finishes.some((f) => f.name === checkedValue('finish2') && f.id !== finish.id)
+                ? checkedValue('finish2') : '',
             toppings: $$('.cb-topping:checked', form).map((i) => i.value),
             message: els.message.value.trim(),
             qty: Number(els.qty.value),
         };
+    }
+
+    const isHex = (value) => /^#[0-9A-F]{6}$/.test(value || '');
+    const isButtercream = (s) => !!s.finish && s.finish.name.toLowerCase().includes('butter');
+
+    // The colors to draw with. "auto" choices are left out so the drawing works them out.
+    function paint(s) {
+        const c = s.colors;
+        const pick = (g) => (isHex(c[g]) ? c[g] : '');
+        const base = pick('base') || DEFAULT_BASE;
+        const base2 = s.style !== 'solid' ? pick('base2') : '';
+        return {
+            base,
+            accent: pick('accent') || DEFAULT_ACCENT,
+            base2,
+            trim: pick('trim'),
+            board: pick('board'),
+            drip: pick('drip'),
+            ink: pick('ink'),
+            // The message sits on the top tier: in the second color for two-tone tiers, mid-fade for ombre.
+            inkOn: s.style === 'tiers' ? base2 : s.style === 'ombre' ? mix(base, base2, 0.5).toUpperCase() : '',
+        };
+    }
+
+    // The color a group shows right now, also when it is set to follow the rest of the design.
+    function shownColor(group, s) {
+        const value = s.colors[group];
+        if (isHex(value)) return value;
+        switch (group) {
+            case 'base': return DEFAULT_BASE;
+            case 'base2': return s.colors.base || DEFAULT_BASE;
+            case 'trim': return s.colors.accent || DEFAULT_ACCENT;
+            case 'drip': return DEFAULT_DRIP;
+            case 'board': return '#FFFFFF';
+            case 'ink': return lastInk.toUpperCase();
+            default: return DEFAULT_ACCENT;
+        }
+    }
+
+    // Which color groups make sense for this cake (the rest are hidden in the "Color to change" row).
+    function groupUsed(group, s) {
+        if (group === 'base2') return s.style !== 'solid';
+        if (group === 'drip') return s.toppings.includes('chocolate_drip');
+        if (group === 'board') return !(s.recipe && s.recipe.shape === 'bento');
+        return true;   // the message color can be chosen before the message is written
     }
 
     function stepDone(step, s) {
@@ -138,10 +222,7 @@
             const iconEl = Object.assign(document.createElement('i'), { className: `bi ${icon} cb-finish-icon` });
             const name = Object.assign(document.createElement('span'), { className: 'cb-option-name', textContent: finish.name });
             const meta = Object.assign(document.createElement('span'), { className: 'cb-option-meta', textContent: blurb });
-            const ready = document.createElement('span');
-            ready.className = `cb-ready ${finish.ready ? 'text-success-emphasis' : 'text-warning-emphasis'}`;
-            ready.innerHTML = finish.ready ? '<i class="bi bi-check-circle me-1"></i>Recipe ready' : '<i class="bi bi-exclamation-circle me-1"></i>Ingredients needed';
-            label.append(iconEl, name, meta, ready);
+            label.append(iconEl, name, meta);
             const cell = document.createElement('div');
             cell.append(input, label);
             els.finishes.append(cell);
@@ -166,767 +247,117 @@
         renderFinishes(readState().size, finishName, '');
     }
 
-    // ---------- Colors ----------
-    function hexToRgb(hex) {
-        const n = parseInt(hex.slice(1), 16);
-        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-
-    function mix(hex, target, amount) {
-        const a = hexToRgb(hex);
-        const b = hexToRgb(target);
-        return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * amount).toString(16).padStart(2, '0')).join('');
-    }
-
-    function luminance(hex) {
-        const [r, g, b] = hexToRgb(hex).map((v) => {
-            v /= 255;
-            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    // The "Upper tier finish" choices: shown for two-tier cakes whose size comes in more than one finish.
+    // Returns true when the choices were rebuilt (the caller then reads the form again).
+    const finish2Box = $('#cb-finish2');
+    const finish2Options = $('#cb-finish2-options');
+    function syncFinish2(s) {
+        const others = s.tierCount > 1 && s.finish ? s.size.finishes.filter((f) => f.id !== s.finish.id).map((f) => f.name) : [];
+        const signature = others.join('|');
+        finish2Box.hidden = others.length === 0;
+        if (finish2Options.dataset.signature === signature) return false;
+        const keep = checkedValue('finish2');
+        finish2Options.dataset.signature = signature;
+        finish2Options.replaceChildren();
+        if (!others.length) return true;
+        [['', `Same (${s.finish.name})`], ...others.map((name) => [name, name])].forEach(([value, text], i) => {
+            const input = Object.assign(document.createElement('input'), { className: 'btn-check', type: 'radio', name: 'finish2', id: `finish2-${i}`, value });
+            input.checked = value === keep || (i === 0 && !others.includes(keep));
+            const label = Object.assign(document.createElement('label'), { className: 'cb-chip', htmlFor: input.id, textContent: text });
+            finish2Options.append(input, label);
         });
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        return true;
     }
 
-    function contrast(a, b) {
-        const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-        return (hi + 0.05) / (lo + 0.05);
-    }
-
-    function applyColors(el, base, accent) {
-        base = base || DEFAULT_BASE;
-        accent = accent || DEFAULT_ACCENT;
-        const baseLight = mix(base, '#FFFFFF', 0.35);
-        const accentDark = mix(accent, '#000000', 0.2);
-        // Message ink: the accent if it reads well on the cake, otherwise a dark or light fallback.
-        let ink = accentDark;
-        if (contrast(ink, baseLight) < 2.2) ink = luminance(baseLight) > 0.4 ? mix(base, '#000000', 0.65) : '#FFFFFF';
-        el.style.setProperty('--cb-base', base);
-        el.style.setProperty('--cb-base-light', baseLight);
-        el.style.setProperty('--cb-base-dark', mix(base, '#000000', 0.14));
-        el.style.setProperty('--cb-accent', accent);
-        el.style.setProperty('--cb-accent-dark', accentDark);
-        el.style.setProperty('--cb-ink', ink);
-    }
-
-    // ---------- Drawing the cake ----------
-    // The cake body is drawn here; toppings, piping and trims come from assets/cake-sprite.svg
-    // (inlined in the page) and are placed with <use href="#cb-...">.
-    const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-    const r1 = (n) => Math.round(n * 10) / 10;
-    const SPRINKLES = ['#FF6B8B', '#FFD166', '#06D6A0', '#4CC9F0', '#B388EB', '#FFFFFF'];
-
-    function seeded(seed) {
-        let a = seed >>> 0;
-        return () => {
-            a = (a + 0x6D2B79F5) | 0;
-            let t = Math.imul(a ^ (a >>> 15), 1 | a);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-    }
-
-    // Places a sprite asset. (x, y) is the asset's anchor point.
-    const use = (id, x, y, scale = 1, rotate = 0) =>
-        `<use href="#${id}" transform="translate(${r1(x)} ${r1(y)})${rotate ? ` rotate(${r1(rotate)})` : ''}${scale !== 1 ? ` scale(${r1(scale * 100) / 100})` : ''}"/>`;
-
-    // Turns a size label such as "6x4", "3x3/4x3" or "12x9x2.5" into pixel tiers, bottom tier first.
-    function tierSizes(shape, tiers, sizeLabel) {
-        const defaults = { round: [7, 4], mini: [3.5, 3], bento: [4, 2.2], square: [8, 4], rectangle: [12, 2.5] };
-        let dims = String(sizeLabel || '').split('/')
-            .map((part) => part.split(/x/i).map(parseFloat).filter((n) => n > 0))
-            .filter((nums) => nums.length >= 2)
-            .map((nums) => ({ d: nums[0], h: nums.length >= 3 ? nums[2] : nums[1], depth: nums.length >= 3 ? nums[1] / nums[0] : 1 }));
-        if (!dims.length) {
-            const [d, h] = defaults[shape] || defaults.round;
-            dims = [{ d, h, depth: shape === 'rectangle' ? 0.75 : 1 }];
-        }
-        dims.sort((a, b) => b.d - a.d);
-        while (dims.length < tiers) {
-            const top = dims[dims.length - 1];
-            dims.push({ d: top.d * 0.72, h: top.h * 0.9, depth: top.depth });
-        }
-        let px = dims.map((t) => ({ w: Math.min(300, 90 + t.d * 18), h: 26 + t.h * 15, depth: t.depth }));
-        const total = px.reduce((sum, t) => sum + t.h, 0);
-        if (total > 200) px = px.map((t) => ({ ...t, h: (t.h * 200) / total }));
-        for (let i = 1; i < px.length; i++) if (px[i].w > px[i - 1].w * 0.85) px[i].w = px[i - 1].w * 0.78;
-        return px;
-    }
-
-    // Round tiers are cylinders. Square and rectangle tiers are boxes seen from the front-right:
-    // a front face (x0..x1), a right face going back by (dx, dy), and a top face.
-    function layoutTiers(shape, sizes, plateY) {
-        const box = shape === 'square' || shape === 'rectangle';
-        const tiers = [];
-        let yb = shape === 'bento' ? plateY - 22 : plateY + (box ? 5 : 0);
-        sizes.forEach((s) => {
-            const t = { box, w: s.w, h: s.h, yb, yt: yb - s.h };
-            if (box) {
-                t.dx = s.w * 0.2 * Math.min(1, s.depth);
-                t.dy = t.dx * 0.85;
-                t.front = s.w - t.dx;
-                t.x0 = 200 - s.w / 2;
-                t.x1 = t.x0 + t.front;
-                t.cx = t.x0 + t.front / 2;
-                t.rx = t.front / 2;
-                t.ry = 0;
-                t.topY = t.yt - t.dy / 2;
-            } else {
-                t.dx = 0;
-                t.dy = 0;
-                t.front = s.w;
-                t.x0 = 200 - s.w / 2;
-                t.x1 = 200 + s.w / 2;
-                t.cx = 200;
-                t.rx = s.w / 2;
-                t.ry = Math.max(7, s.w * 0.13);
-                t.topY = t.yt;
-            }
-            t.scale = Math.max(0.7, Math.min(1.25, t.front / 190));
-            tiers.push(t);
-            yb = box ? t.yt - t.dy * 0.45 : t.yt;
-        });
-        return tiers;
-    }
-
-    // Evenly spaced points along a tier's visible top or bottom edge, left to right
-    // (for boxes: along the front edge, then back along the right edge).
-    function edgePoints(t, where, spacing) {
-        const y = where === 'top' ? t.yt : t.yb;
-        const pts = [];
-        if (t.box) {
-            const nf = Math.max(4, Math.round(t.front / spacing));
-            for (let i = 0; i <= nf; i++) pts.push({ x: t.x0 + 2 + ((t.front - 4) * i) / nf, y });
-            const ns = Math.max(1, Math.round(Math.hypot(t.dx, t.dy) / spacing));
-            for (let i = 1; i <= ns; i++) pts.push({ x: t.x1 + (t.dx * i) / ns, y: y - (t.dy * i) / ns });
-            return pts;
-        }
-        const arc = Math.PI * Math.sqrt((t.rx * t.rx + t.ry * t.ry) / 2);
-        const n = Math.max(6, Math.round(arc / spacing));
-        for (let i = 0; i <= n; i++) {
-            const angle = Math.PI - (Math.PI * i) / n;
-            pts.push({ x: t.cx + t.rx * Math.cos(angle), y: y + t.ry * Math.sin(angle) });
-        }
-        return pts;
-    }
-
-    // ----- Scenery -----
-    function stand(width, y) {
-        const rx = width / 2 + 30;
-        return `<ellipse cx="200" cy="${y + 39}" rx="54" ry="8" fill="url(#cbg-metal)"/>
-            <ellipse cx="200" cy="${y + 37}" rx="50" ry="5.5" fill="#F3F5F9"/>
-            <path d="M184,${y + 8} C190,${y + 20} 191,${y + 27} 175,${y + 37} H225 C209,${y + 27} 210,${y + 20} 216,${y + 8} Z" fill="url(#cbg-metal)"/>
-            <ellipse cx="200" cy="${y + 6}" rx="${r1(rx)}" ry="14" fill="#B9C1CE"/>
-            <ellipse cx="200" cy="${y}" rx="${r1(rx)}" ry="14" fill="url(#cbg-plate)"/>
-            <path d="M${r1(200 - rx + 6)},${y + 3} A${r1(rx - 6)},12 0 0 0 ${r1(200 + rx - 6)},${y + 3}" stroke="#fff" stroke-width="1.6" fill="none" opacity=".8"/>`;
-    }
-
-    function bentoBack(width, y) {
-        const w = width + 70;
-        const x = 200 - w / 2;
-        return `<path d="M${r1(x)},${y - 2} L${r1(x + 12)},${y - 155} H${r1(x + w - 12)} L${r1(x + w)},${y - 2} Z" fill="url(#cbg-kraft)"/>
-            <path d="M${r1(x + 12)},${y - 155} H${r1(x + w - 12)}" stroke="#CBAA74" stroke-width="4" stroke-linecap="round"/>
-            <path d="M${r1(x + 9)},${y - 120} H${r1(x + w - 9)}" stroke="#D9BD8C" stroke-width="1.4" stroke-dasharray="3 4"/>
-            <path d="M${r1(x + 2)},${y - 30} H${r1(x + w - 2)} L${r1(x + w)},${y - 2} H${r1(x)} Z" fill="#000" opacity=".06"/>`;
-    }
-
-    function bentoFront(width, y) {
-        const w = width + 70;
-        const x = 200 - w / 2;
-        return `<path d="M${r1(x - 5)},${y - 5} H${r1(x + w + 5)} L${r1(x + w - 6)},${y + 27} H${r1(x + 6)} Z" fill="url(#cbg-kraft-front)"/>
-            <path d="M${r1(x - 3)},${y - 3} H${r1(x + w + 3)}" stroke="#F6E6C6" stroke-width="2.2" stroke-linecap="round"/>
-            <circle cx="200" cy="${y + 12}" r="9.5" fill="#FFFFFF" stroke="#EBD9B6"/>
-            ${use('cb-heart2d', 200, y + 12.5, 0.55)}`;
-    }
-
-    // ----- Cake body -----
-    function tierBody(t, uid) {
-        if (t.box) {
-            const right = `${r1(t.x1)},${r1(t.yt)} ${r1(t.x1 + t.dx)},${r1(t.yt - t.dy)} ${r1(t.x1 + t.dx)},${r1(t.yb - t.dy)} ${r1(t.x1)},${r1(t.yb)}`;
-            const top = `${r1(t.x0)},${r1(t.yt)} ${r1(t.x1)},${r1(t.yt)} ${r1(t.x1 + t.dx)},${r1(t.yt - t.dy)} ${r1(t.x0 + t.dx)},${r1(t.yt - t.dy)}`;
-            return `<polygon points="${right}" fill="url(#${uid}-right)"/>
-                <polygon points="${right}" fill="url(#${uid}-ao)"/>
-                <rect x="${r1(t.x0)}" y="${r1(t.yt)}" width="${r1(t.front)}" height="${r1(t.h)}" fill="url(#${uid}-front)"/>
-                <rect x="${r1(t.x0)}" y="${r1(t.yt)}" width="${r1(t.front)}" height="${r1(t.h)}" fill="url(#${uid}-ao)"/>
-                <polygon points="${top}" fill="url(#${uid}-top)"/>
-                <path d="M${r1(t.x0 + 1)},${r1(t.yt + 0.8)} H${r1(t.x1)} L${r1(t.x1 + t.dx - 1)},${r1(t.yt - t.dy + 0.8)}" stroke="#fff" stroke-opacity=".55" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
-                <path d="M${r1(t.x1)},${r1(t.yt)} V${r1(t.yb)}" stroke="#000" stroke-opacity=".08" stroke-width="1"/>`;
-        }
-        const side = `M${r1(t.x0)},${r1(t.yt)} V${r1(t.yb)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x1)},${r1(t.yb)} V${r1(t.yt)} Z`;
-        return `<path d="${side}" fill="url(#${uid}-side)"/>
-            <path d="${side}" fill="url(#${uid}-ao)"/>
-            <ellipse cx="${t.cx}" cy="${r1(t.yt)}" rx="${r1(t.rx)}" ry="${r1(t.ry)}" fill="url(#${uid}-top)"/>
-            <path d="M${r1(t.x0 + 1.5)},${r1(t.yt + 0.6)} A${r1(t.rx - 1.5)},${r1(t.ry - 0.6)} 0 0 0 ${r1(t.x1 - 1.5)},${r1(t.yt + 0.6)}" stroke="#fff" stroke-opacity=".6" stroke-width="2" fill="none"/>`;
-    }
-
-    // Soft shadow where a tier rests on the plate or on the tier below.
-    function contactShadow(t) {
-        if (t.box) {
-            return `<ellipse cx="${r1(t.cx + t.dx / 2)}" cy="${r1(t.yb - t.dy / 2)}" rx="${r1(t.w / 2 + 8)}" ry="${r1(t.dy / 2 + 9)}" fill="url(#cbg-contact)"/>`;
-        }
-        return `<ellipse cx="${t.cx}" cy="${r1(t.yb + 1)}" rx="${r1(t.rx + 9)}" ry="${r1(t.ry + 6)}" fill="url(#cbg-contact)"/>`;
-    }
-
-    // ----- Finishes -----
-    function shellBorder(t, where, size) {
-        const pts = edgePoints(t, where, 9 * size);
-        let out = '';
-        for (let i = 0; i < pts.length - 1; i++) {
-            const a = pts[i];
-            const b = pts[i + 1];
-            const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-            const along = (Math.hypot(b.x - a.x, b.y - a.y) / 9) * 0.95;
-            // Shells on a receding (diagonal) edge are drawn flatter, as seen at an angle.
-            const across = Math.abs(angle) > 20 ? size * 0.55 : along;
-            out += `<use href="#cb-shell" transform="translate(${r1(a.x)} ${r1(a.y - (where === 'bottom' ? 3.5 * size : 0))}) rotate(${r1(angle)}) scale(${r1(along * 100) / 100} ${r1(across * 100) / 100})"/>`;
-        }
-        return out;
-    }
-
-    const row = (t, where, id, spacing, scale, lift = 0) =>
-        edgePoints(t, where, spacing).map((p) => use(id, p.x, p.y - lift, scale)).join('');
-
-    // Points along the far edges of the top (drawn first, so the front border overlaps them).
-    function backEdgePoints(t, spacing) {
-        const pts = [];
-        if (t.box) {
-            const nl = Math.max(1, Math.round(Math.hypot(t.dx, t.dy) / spacing));
-            for (let i = 0; i < nl; i++) pts.push({ x: t.x0 + (t.dx * i) / nl, y: t.yt - (t.dy * i) / nl });
-            const nb = Math.max(4, Math.round(t.front / spacing));
-            for (let i = 0; i <= nb; i++) pts.push({ x: t.x0 + t.dx + (t.front * i) / nb, y: t.yt - t.dy });
-            return pts;
-        }
-        const arc = Math.PI * Math.sqrt((t.rx * t.rx + t.ry * t.ry) / 2);
-        const n = Math.max(6, Math.round(arc / spacing));
-        for (let i = 1; i < n; i++) {
-            const angle = Math.PI + (Math.PI * i) / n;
-            pts.push({ x: t.cx + t.rx * Math.cos(angle), y: t.yt + t.ry * Math.sin(angle) });
-        }
-        return pts;
-    }
-
-    // A border all the way around the top: far side first, then the near side.
-    const topBorder = (t, id, spacing, scale) =>
-        backEdgePoints(t, spacing).map((p) => use(id, p.x, p.y, scale * 0.92)).join('') + row(t, 'top', id, spacing, scale);
-
-    function ribbon(t) {
-        const hgt = 9 * t.scale;
-        if (t.box) {
-            return `<polygon points="${r1(t.x1)},${r1(t.yb - hgt)} ${r1(t.x1 + t.dx)},${r1(t.yb - hgt - t.dy)} ${r1(t.x1 + t.dx)},${r1(t.yb - t.dy)} ${r1(t.x1)},${r1(t.yb)}" style="fill:var(--cb-accent-dark)"/>
-                <rect x="${r1(t.x0)}" y="${r1(t.yb - hgt)}" width="${r1(t.front)}" height="${r1(hgt)}" style="fill:var(--cb-accent)"/>
-                <path d="M${r1(t.x0)},${r1(t.yb - hgt + 0.8)} H${r1(t.x1)}" stroke="#fff" stroke-opacity=".4" stroke-width="1.2"/>`;
-        }
-        return `<path d="M${r1(t.x0)},${r1(t.yb - hgt)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x1)},${r1(t.yb - hgt)} V${r1(t.yb)} A${r1(t.rx)},${r1(t.ry)} 0 0 1 ${r1(t.x0)},${r1(t.yb)} Z" style="fill:var(--cb-accent)"/>
-            <path d="M${r1(t.x0)},${r1(t.yb - hgt)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x1)},${r1(t.yb - hgt)} V${r1(t.yb)} A${r1(t.rx)},${r1(t.ry)} 0 0 1 ${r1(t.x0)},${r1(t.yb)} Z" fill="url(#cbg-shade-v)" opacity=".7"/>
-            <path d="M${r1(t.x0)},${r1(t.yb - hgt + 0.8)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x1)},${r1(t.yb - hgt + 0.8)}" stroke="#fff" stroke-opacity=".4" stroke-width="1.2" fill="none"/>`;
-    }
-
-    // Glossy vertical highlight on smooth fondant.
-    function sheen(t) {
-        const x = t.x0 + t.front * 0.15;
-        const top = t.box ? t.yt + 4 : t.yt + t.ry * 0.9;
-        const bottom = t.box ? t.yb - 4 : t.yb + t.ry * 0.65;
-        return `<rect x="${r1(x)}" y="${r1(top)}" width="${r1(t.front * 0.12)}" height="${r1(bottom - top)}" rx="6" fill="url(#cbg-shine-h)"/>`;
-    }
-
-    // Spatula strokes on buttercream sides and a swirl on top.
-    function buttercreamTexture(t, rand) {
-        let out = '';
-        for (let k = 1; k <= 3; k++) {
-            const level = t.yt + (t.h * k) / 4;
-            const steps = 26;
-            const phase = rand() * 6;
-            let d = '';
-            for (let i = 0; i <= steps; i++) {
-                const f = i / steps;
-                let x;
-                let y;
-                if (t.box) {
-                    x = t.x0 + 2 + (t.front - 4) * f;
-                    y = level;
-                } else {
-                    const angle = Math.PI - Math.PI * f;
-                    x = t.cx + (t.rx - 1) * Math.cos(angle);
-                    y = level + t.ry * Math.sin(angle);
-                }
-                y += Math.sin(f * Math.PI * 7 + phase) * 1.3;
-                d += `${i ? 'L' : 'M'}${r1(x)},${r1(y)} `;
-            }
-            out += `<path d="${d}" style="stroke:var(--cb-base-dark)" stroke-opacity=".3" stroke-width="1.6" fill="none" stroke-linecap="round"/>`;
-            out += `<path d="${d}" stroke="#fff" stroke-opacity=".35" stroke-width="1" fill="none" transform="translate(0 1.6)"/>`;
-        }
-        if (!t.box) {
-            out += `<ellipse cx="${t.cx}" cy="${r1(t.yt)}" rx="${r1(t.rx * 0.55)}" ry="${r1(t.ry * 0.5)}" style="stroke:var(--cb-base-dark)" stroke-opacity=".16" stroke-width="1.4" fill="none"/>
-                <ellipse cx="${t.cx}" cy="${r1(t.yt)}" rx="${r1(t.rx * 0.28)}" ry="${r1(t.ry * 0.26)}" style="stroke:var(--cb-base-dark)" stroke-opacity=".14" stroke-width="1.2" fill="none"/>`;
-        }
-        return out;
-    }
-
-    // Decorations that depend on the finish. "under" goes below a chocolate drip, "over" on top of it.
-    function finishDecor(t, finish, rand) {
-        const f = (finish || '').toLowerCase();
-        const s = t.scale;
-        let under = '';
-        let over = '';
-        let trim = 9 * s; // height of the bottom trim, so pearls can sit above it
-        if (f.includes('butter')) {
-            under += buttercreamTexture(t, rand) + shellBorder(t, 'bottom', s);
-            over += topBorder(t, 'cb-rosette', 8.5 * s, s * 0.85);
-        } else if (f.includes('semi')) {
-            under += sheen(t) + ribbon(t);
-            over += topBorder(t, 'cb-bead', 7 * s, s * 0.8);
-        } else if (f.includes('fondant')) {
-            under += sheen(t) + ribbon(t);
-            if (f.includes('all')) under += use('cb-bow', t.cx, t.box ? t.yb - 5 * s : t.yb + t.ry - 5 * s, s);
-        } else if (f.includes('icing') || f.includes('2d')) {
-            const y = t.box ? t.yt + t.h * 0.5 : t.yt + t.ry * 0.75 + t.h * 0.5;
-            const size = Math.min(1.1, t.h / 60) * s;
-            under += use('cb-star2d', t.x0 + t.front * 0.17, y, size, -12) + use('cb-heart2d', t.x1 - t.front * 0.17, y, size, 10);
-            over += topBorder(t, 'cb-bead', 6.5 * s, s * 0.7);
-            trim = 0;
-        } else {
-            under += row(t, 'bottom', 'cb-bead', 7.5 * s, s, 3 * s);
-        }
-        return { under, over, trim };
-    }
-
-    // ----- Toppings drawn on the cake -----
-    function drip(t, rand) {
-        const pts = edgePoints(t, 'top', 11 * t.scale);
-        const lip = 3.5;
-        let d = `M${r1(pts[0].x)},${r1(pts[0].y + lip)}`;
-        let gloss = '';
-        for (let i = 0; i < pts.length - 1; i++) {
-            const a = pts[i];
-            const b = pts[i + 1];
-            const mx = (a.x + b.x) / 2 + (rand() - 0.5) * 3;
-            const my = (a.y + b.y) / 2 + lip;
-            if (rand() < 0.82) {
-                const seg = Math.hypot(b.x - a.x, b.y - a.y);
-                const w = Math.min(6, seg * 0.3) * (0.75 + rand() * 0.5);
-                const len = 5 + rand() * Math.min(t.h * 0.45, 34);
-                d += ` L${r1(mx - w)},${r1(my)} L${r1(mx - w * 0.8)},${r1(my + len)}`
-                    + ` C${r1(mx - w * 1.35)},${r1(my + len + w * 1.9)} ${r1(mx + w * 1.35)},${r1(my + len + w * 1.9)} ${r1(mx + w * 0.8)},${r1(my + len)}`
-                    + ` L${r1(mx + w)},${r1(my)}`;
-                gloss += `<ellipse cx="${r1(mx - w * 0.3)}" cy="${r1(my + len + w * 0.3)}" rx="${r1(w * 0.28)}" ry="${r1(w * 0.5)}" fill="#fff" opacity=".35"/>`;
-            }
-            d += ` L${r1(b.x)},${r1(b.y + lip)}`;
-        }
-        d += t.box
-            ? ` L${r1(t.x1 + t.dx)},${r1(t.yt - t.dy)} L${r1(t.x0 + t.dx)},${r1(t.yt - t.dy)} L${r1(t.x0)},${r1(t.yt)} Z`
-            : ` L${r1(t.x1)},${r1(t.yt)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x0)},${r1(t.yt)} Z`;
-        const edge = pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p.x)},${r1(p.y + 1.5)}`).join(' ');
-        return `<path d="${d}" fill="url(#cbg-choc)"/>
-            <path d="${edge}" stroke="#fff" stroke-opacity=".28" stroke-width="1.6" fill="none" stroke-linecap="round"/>${gloss}`;
-    }
-
-    function sidePoint(t, rand) {
-        const x = t.x0 + 8 + rand() * (t.front - 16);
-        if (t.box) return { x, y: t.yt + 6 + rand() * (t.h - 12) };
-        const curve = t.ry * Math.sqrt(Math.max(0, 1 - ((x - t.cx) / t.rx) ** 2));
-        const top = t.yt + curve + 5;
-        const bottom = t.yb + curve - 7;
-        return { x, y: top + rand() * Math.max(2, bottom - top) };
-    }
-
-    function topPoint(t, rand) {
-        if (t.box) {
-            const u = 0.08 + rand() * 0.84;
-            const v = 0.12 + rand() * 0.76;
-            return { x: t.x0 + u * t.front + v * t.dx, y: t.yt - v * t.dy };
-        }
-        const a = rand() * Math.PI * 2;
-        const r = Math.sqrt(rand()) * 0.82;
-        return { x: t.cx + Math.cos(a) * r * t.rx, y: t.yt + Math.sin(a) * r * t.ry };
-    }
-
-    function sprinkles(t, rand, onTop) {
-        const bit = (p, i) => (i % 4 === 3
-            ? `<circle cx="${r1(p.x)}" cy="${r1(p.y)}" r="1.5" fill="${SPRINKLES[i % SPRINKLES.length]}"/>`
-            : `<rect x="${r1(p.x - 3.2)}" y="${r1(p.y - 1.1)}" width="6.4" height="2.2" rx="1.1" fill="${SPRINKLES[i % SPRINKLES.length]}" transform="rotate(${Math.round(rand() * 180)} ${r1(p.x)} ${r1(p.y)})"/>`);
-        let out = '';
-        const count = 12 + Math.round(t.front / 12);
-        for (let i = 0; i < count; i++) out += bit(sidePoint(t, rand), i);
-        if (onTop) for (let i = 0; i < count; i++) out += bit(topPoint(t, rand), i + 2);
-        return out;
-    }
-
-    function goldLeaf(t, rand) {
-        let out = '';
-        const cx = t.x0 + t.front * 0.2;
-        const cy = (t.box ? t.yt : t.yt + t.ry) + t.h * 0.2;
-        for (let i = 0; i < 9; i++) {
-            const x = cx + (rand() - 0.5) * t.front * 0.26;
-            const y = cy + (rand() - 0.3) * t.h * 0.3;
-            out += use(`cb-gold-${1 + (i % 3)}`, x, y, (0.45 + rand() * 0.45) * t.scale, rand() * 360);
-        }
-        if (!t.box) for (let i = 0; i < 3; i++) {
-            const p = topPoint(t, rand);
-            out += use(`cb-gold-${1 + (i % 3)}`, p.x, p.y, 0.5 * t.scale, rand() * 360);
-        }
-        return out;
-    }
-
-    function sideFlowers(t) {
-        const s = t.scale;
-        const x = t.x1 - t.front * 0.2;
-        const y = (t.box ? t.yt : t.yt + t.ry) + t.h * 0.3;
-        return use('cb-leaf', x + 3 * s, y + 4 * s, s * 1.1, 20) + use('cb-leaf', x - 4 * s, y + 6 * s, s, 150)
-            + use('cb-blossom', x, y, s * 1.25) + use('cb-blossom', x + 12 * s, y + 11 * s, s) + use('cb-blossom', x - 7 * s, y + 17 * s, s * 0.8);
-    }
-
-    function message(t, text) {
-        const room = t.front * 0.8;
-        // Shrink the font to fit first; squeeze the letters only if it's still too long.
-        const fontSize = Math.max(10, Math.min(24, t.h * 0.32, room / (text.length * 0.5)));
-        const y = (t.box ? t.yt : t.yt + t.ry) + t.h * 0.5 - 3;
-        const fit = text.length * fontSize * 0.5 > room ? ` textLength="${r1(room)}" lengthAdjust="spacingAndGlyphs"` : '';
-        const attrs = `x="${r1(t.cx)}" text-anchor="middle" dominant-baseline="middle" font-size="${r1(fontSize)}" font-family="'Segoe Script','Brush Script MT','Lucida Handwriting',cursive" font-weight="700"${fit}`;
-        return `<text ${attrs} y="${r1(y + 1.3)}" fill="#000" opacity=".18">${esc(text)}</text>
-            <text ${attrs} y="${r1(y)}" style="fill:var(--cb-ink);paint-order:stroke;stroke:var(--cb-base-light);stroke-width:3px;stroke-linejoin:round">${esc(text)}</text>`;
-    }
-
-    // The drawn (vector) cake. Used when the Blender images aren't available.
-    function drawVectorCake(svg, cfg) {
-        delete svg.dataset.renderKey;
-        delete svg.dataset.waitingFor;
-        const uid = svg.dataset.uid || (svg.dataset.uid = 'c' + Math.random().toString(36).slice(2, 8));
-        const plateY = 292;
-        const sizes = tierSizes(cfg.shape || 'round', cfg.tiers || 1, cfg.size);
-        const width = sizes[0].w;
-        const pieces = [];
-
-        // Gradients that follow this cake's colors (the sprite holds the fixed-color ones).
-        pieces.push(`<defs>
-            <linearGradient id="${uid}-side" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0" style="stop-color:var(--cb-base-dark)"/>
-                <stop offset=".16" style="stop-color:var(--cb-base)"/>
-                <stop offset=".36" style="stop-color:var(--cb-base-light)"/>
-                <stop offset=".64" style="stop-color:var(--cb-base)"/>
-                <stop offset="1" style="stop-color:var(--cb-base-dark)"/>
-            </linearGradient>
-            <linearGradient id="${uid}-front" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0" style="stop-color:var(--cb-base)"/>
-                <stop offset=".3" style="stop-color:var(--cb-base-light)"/>
-                <stop offset="1" style="stop-color:var(--cb-base)"/>
-            </linearGradient>
-            <linearGradient id="${uid}-right" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0" style="stop-color:var(--cb-base-dark)"/>
-                <stop offset="1" style="stop-color:var(--cb-base)"/>
-            </linearGradient>
-            <radialGradient id="${uid}-top" cx=".45" cy=".42" r=".62">
-                <stop offset="0" style="stop-color:var(--cb-base-light)"/>
-                <stop offset=".7" style="stop-color:var(--cb-base-light)"/>
-                <stop offset="1" style="stop-color:var(--cb-base)"/>
-            </radialGradient>
-            <linearGradient id="${uid}-ao" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stop-color="#fff" stop-opacity=".12"/>
-                <stop offset=".25" stop-color="#fff" stop-opacity="0"/>
-                <stop offset=".72" stop-color="#000" stop-opacity="0"/>
-                <stop offset="1" stop-color="#000" stop-opacity=".16"/>
-            </linearGradient>
-            <radialGradient id="${uid}-floor"><stop offset="0" stop-color="#000" stop-opacity=".2"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-        </defs>`);
-        pieces.push(`<ellipse cx="200" cy="341" rx="${r1(width / 2 + 55)}" ry="11" fill="url(#${uid}-floor)"/>`);
-        pieces.push(cfg.shape === 'bento' ? bentoBack(width, plateY) : stand(width, plateY));
-
-        // Nothing chosen yet: a dashed "ghost" cake.
-        if (!cfg.shape) {
-            pieces.push(`<g fill="none" stroke-width="2.5" stroke-dasharray="7 7" style="stroke:var(--bs-secondary-color)" opacity=".55">
-                <path d="M105,180 V280 A95,22 0 0 0 295,280 V180"/><ellipse cx="200" cy="180" rx="95" ry="22"/></g>
-                <text x="200" y="245" text-anchor="middle" font-size="42" font-weight="700" style="fill:var(--bs-secondary-color)" opacity=".45">?</text>`);
-            svg.innerHTML = pieces.join('');
-            return;
-        }
-
-        const tiers = layoutTiers(cfg.shape, sizes, plateY);
-        const toppings = new Set(cfg.toppings || []);
-        const popOn = (key) => cfg.popAll || (cfg.popSet && cfg.popSet.has(key));
-        const item = (key, inner) => inner
-            ? `<g class="cb-top-item${popOn(key) ? ' cb-pop' : ''}" data-t="${key}"${popOn(key) && cfg.popAll ? ' style="animation-delay:.5s"' : ''}>${inner}</g>`
-            : '';
-        const rand = seeded(Math.round(width * 7 + tiers.length * 131));
-
-        tiers.forEach((t, i) => {
-            const isTop = i === tiers.length - 1;
-            const decor = finishDecor(t, cfg.finish, rand);
-            const anim = cfg.animateTiers ? ` cb-drop" style="animation-delay:${i * 0.14}s` : '';
-            let g = (cfg.shape === 'bento' ? '' : contactShadow(t)) + tierBody(t, uid) + decor.under;
-            if (isTop && toppings.has('chocolate_drip')) g += item('chocolate_drip', drip(t, seeded(i + 7)));
-            g += decor.over;
-            if (toppings.has('pearls')) g += item('pearls', row(t, 'bottom', 'cb-pearl', 7.6, 1, decor.trim + 5));
-            if (toppings.has('sprinkles')) g += item('sprinkles', sprinkles(t, rand, isTop && !toppings.has('chocolate_drip')));
-            if (isTop && toppings.has('gold_leaf')) g += item('gold_leaf', goldLeaf(t, rand));
-            if (isTop && toppings.has('flowers')) g += item('flowers', sideFlowers(t));
-            if (isTop && cfg.message) g += item('message', message(t, cfg.message));
-            pieces.push(`<g class="cb-tier${anim}">${g}</g>`);
-        });
-
-        if (cfg.shape === 'bento') pieces.push(bentoFront(width, plateY));
-
-        // Pieces standing on the top surface: candles in the middle, the rest split left and right,
-        // drawn back to front so nearer pieces overlap farther ones.
-        const top = tiers[tiers.length - 1];
-        const others = [];
-        const candles = [];
-        for (const key of ['strawberries', 'cherries', 'macarons', 'flowers', 'candles']) {
-            if (!toppings.has(key)) continue;
-            if (key === 'candles') candles.push(key, key, key);
-            else if (key === 'flowers') others.push(key);
-            else others.push(key, key);
-        }
-        const half = Math.ceil(others.length / 2);
-        const lineUp = [...others.slice(0, half), ...candles, ...others.slice(half)];
-        if (lineUp.length) {
-            const scale = Math.max(0.7, Math.min(1.2, top.front / 180));
-            const spanX = (top.box ? top.front / 2 : top.rx) * (lineUp.length > 4 ? 0.74 : 0.6);
-            const spanY = (top.box ? top.dy / 2 : top.ry) * 0.42;
-            const centerX = top.box ? top.cx + top.dx / 2 : top.cx;
-            const counts = {};
-            lineUp.map((key, i) => ({
-                key,
-                n: (counts[key] = (counts[key] || 0) + 1),
-                x: lineUp.length === 1 ? centerX : centerX - spanX + (2 * spanX * i) / (lineUp.length - 1),
-                y: top.topY + (lineUp.length > 2 ? (i % 2 ? 1 : -1) * spanY : 0),
-            })).sort((a, b) => a.y - b.y).forEach((p) => {
-                const asset = {
-                    strawberries: p.n % 2 ? 'cb-strawberry' : 'cb-strawberry-half',
-                    cherries: 'cb-cherry',
-                    macarons: 'cb-macaron',
-                    flowers: 'cb-rose',
-                    candles: 'cb-candle',
-                }[p.key];
-                const size = p.key === 'flowers' ? scale * 1.2 : scale;
-                const tilt = p.key === 'macarons' ? (p.n % 2 ? -8 : 6) : p.key === 'cherries' ? (p.n % 2 ? -6 : 8) : 0;
-                const shadow = `<ellipse cx="${r1(p.x)}" cy="${r1(p.y)}" rx="${r1(9 * scale)}" ry="${r1(2.6 * scale)}" fill="url(#cbg-contact)"/>`;
-                pieces.push(item(p.key, shadow + use(asset, p.x, p.y, size, tilt)));
-            });
-        }
-
-        svg.innerHTML = pieces.join('');
-    }
-
-    // ---------- Rendered cake (Blender images) ----------
-    // assets/cake-renders holds one see-through image per cake part, made by
-    // blender_cake_kit/render_builder_assets.py. Parts that take the customer's colours were
-    // rendered white and are tinted here with an SVG multiply filter; the message is live text.
-    const RENDERS = data.renders;
-    const TOP_ITEMS = ['flowers', 'macarons', 'candles', 'strawberries', 'cherries']; // back to front
-    const loadedImages = new Set();
-    const loadingImages = new Map();
-
-    function finishKey(name) {
-        const f = (name || '').toLowerCase();
-        if (f.includes('butter')) return 'buttercream';
-        if (f.includes('semi')) return 'semi';
-        if (f.includes('fondant')) return f.includes('all') ? 'allfondant' : 'fondant';
-        if (f.includes('icing') || f.includes('2d')) return 'icing';
-        return 'plain';
-    }
-
-    // Size label parts with at least two numbers, e.g. "6x4/4x3" -> [[6, 4], [4, 3]].
-    const sizeParts = (label) => String(label || '').split('/')
-        .map((part) => (part.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter((n) => n > 0))
-        .filter((nums) => nums.length >= 2);
-
-    function rigFor(shape, tiers, sizeLabel) {
-        if (!RENDERS || !shape) return null;
-        const n = Math.min(2, Math.max(tiers || 1, sizeParts(sizeLabel).length));
-        const rigs = RENDERS.rigs;
-        const exact = rigs[`${shape}-${n}@${sizeLabel}`];
-        if (exact) return { rig: exact, key: `${shape}-${n}@${sizeLabel}`, exact: true };
-        for (const key of [`${shape}-${n}`, `${shape}-1`]) if (rigs[key]) return { rig: rigs[key], key, exact: false };
-        return null;
-    }
-
-    // The layers to stack, back to front: [name, tint, group, topping].
-    function renderedLayers(rig, cfg) {
-        const toppings = new Set(cfg.toppings || []);
-        const drip = toppings.has('chocolate_drip');
-        const finish = finishKey(cfg.finish);
-        const body = { buttercream: 'buttercream', semi: 'fondant', fondant: 'fondant', allfondant: 'fondant' }[finish] || 'smooth';
-        const list = [];
-        const add = (name, tint, group, topping = '') => { if (rig.layers[name]) list.push([name, tint, group, topping]); };
-        add(cfg.shape === 'bento' ? 'box-back' : 'stand', '', 'back');
-        add(`body-${body}`, 'base', 'cake');
-        if (drip) add('drip', '', 'cake', 'chocolate_drip');
-        add(`finish-${finish}${drip ? '-drip' : ''}`, 'accent', 'cake');
-        if (toppings.has('pearls')) add(finish === 'icing' ? 'pearls-low' : 'pearls', '', 'cake', 'pearls');
-        if (toppings.has('sprinkles')) add(drip ? 'sprinkles-drip' : 'sprinkles', '', 'cake', 'sprinkles');
-        if (toppings.has('gold_leaf')) add('gold', '', 'cake', 'gold_leaf');
-        if (toppings.has('flowers')) {
-            add('flowers-side', 'accent', 'cake', 'flowers');
-            add('flowers-side-fixed', '', 'cake', 'flowers');
-        }
-        TOP_ITEMS.filter((key) => toppings.has(key)).forEach((key) => {
-            if (key === 'flowers') {
-                add('flowers-top', 'accent', 'top', key);
-                add('flowers-top-fixed', '', 'top', key);
-            } else if (key === 'macarons' || key === 'candles') {
-                add(key, 'accent', 'top', key);
-                add(`${key}-fixed`, '', 'top', key);
-            } else {
-                add(key, '', 'top', key);
+    // ---------- Toppings and message on the cake ----------
+    // Keeps the movable pieces in step with the topping checkboxes: a newly ticked topping gets its
+    // usual pieces, an unticked one loses them.
+    function syncItems(toppings) {
+        CD.PIECE_KEYS.forEach((key) => {
+            const has = layout.items.some((item) => item.k === key);
+            if (toppings.includes(key) && !has) {
+                layout.items.push(...CD.defaultItems([key]));
+            } else if (!toppings.includes(key) && has) {
+                layout.items = layout.items.filter((item) => item.k !== key);
+                if (typeof selected === 'number') selected = null;
             }
         });
-        if (cfg.shape === 'bento') {
-            add('box-front', '', 'front');
-            add('box-front-accent', 'accent', 'front'); // the heart sticker
+        if (typeof selected === 'number' && !layout.items[selected]) selected = null;
+    }
+
+    const layoutJson = () => JSON.stringify({
+        items: layout.items.map((item) => [item.k, r3(item.u), r3(item.v), r3(item.s)]),
+        msg: [r3(layout.msg.dx), r3(layout.msg.dy), r3(layout.msg.size)],
+        photo: layout.photo ? [layout.photo.id, r3(layout.photo.u), r3(layout.photo.v), r3(layout.photo.s)] : null,
+    });
+
+    // Reads a layout as sent to the server ({items: [[key, u, v, size]], msg: [dx, dy, size]}).
+    function parseLayout(json) {
+        const result = blankLayout();
+        let raw = null;
+        try { raw = JSON.parse(json || ''); } catch (e) { raw = null; }
+        if (!raw || typeof raw !== 'object') return result;
+        const num = (value, lo, hi, fallback) => (Number.isFinite(Number(value)) ? clamp(Number(value), lo, hi) : fallback);
+        if (Array.isArray(raw.items)) {
+            result.items = raw.items.filter((item) => Array.isArray(item) && CD.PIECE_KEYS.includes(item[0]))
+                .map((item) => ({ k: item[0], u: num(item[1], -1, 1, 0), v: num(item[2], -1, 1, 0), s: num(item[3], ...SIZE_RANGE, 1) }));
         }
-        return list;
-    }
-
-    // Bigger sizes draw a little bigger (the images were rendered at the shape's default size).
-    function renderedScale(found, sizeLabel) {
-        if (found.exact) return 1;
-        const parts = sizeParts(sizeLabel);
-        if (!parts.length) return 1;
-        const d = Math.max(...parts.map((p) => p[0]));
-        const k = (90 + 18 * d) / (90 + 18 * found.rig.default_d);
-        return Math.max(0.82, Math.min(1.15, k));
-    }
-
-    function renderedMessage(rig, text, drip, uid) {
-        if (!text) return '';
-        const spot = rig.message[drip ? 'drip' : 'plain'];
-        const d = 'M' + spot.path.map(([x, y]) => `${x},${y}`).join(' L');
-        // Script letters are about 0.6 em wide; shrink first, then squeeze so the text never runs off the path.
-        const CHAR = 0.6;
-        const fontSize = Math.max(7, Math.min(spot.height, spot.room / (text.length * CHAR)));
-        const fit = text.length * fontSize * CHAR > spot.room * 0.9 ? ` textLength="${r1(spot.room)}" lengthAdjust="spacingAndGlyphs"` : '';
-        const font = `font-size="${r1(fontSize)}" font-family="'Segoe Script','Brush Script MT','Lucida Handwriting',cursive" font-weight="700" dominant-baseline="middle"`;
-        const line = (extra) => `<text ${font} ${extra}><textPath href="#${uid}-msgpath" startOffset="50%" text-anchor="middle"${fit}>${esc(text)}</textPath></text>`;
-        const html = `<path id="${uid}-msgpath" d="${d}" fill="none"/>`
-            + line('transform="translate(0 1.3)" fill="#000" opacity=".18"')
-            + line('style="fill:var(--cb-ink);paint-order:stroke;stroke:var(--cb-base-light);stroke-width:3px;stroke-linejoin:round"');
-        if (!spot.squash) return html;
-        // Written flat on the top of the cake (bento): squash it to match the camera angle.
-        const [x0, y0] = spot.path[0];
-        const [x1, y1] = spot.path[spot.path.length - 1];
-        const cx = r1((x0 + x1) / 2);
-        const cy = r1((y0 + y1) / 2);
-        return `<g transform="translate(${cx} ${cy}) scale(1 ${spot.squash}) translate(${-cx} ${-cy})">${html}</g>`;
-    }
-
-    function loadImage(url) {
-        if (!loadingImages.has(url)) {
-            loadingImages.set(url, new Promise((resolve) => {
-                const img = new Image();
-                const done = () => {
-                    loadedImages.add(url);
-                    resolve();
-                };
-                img.onload = done;
-                img.onerror = done; // a missing layer just doesn't show; it never blocks the cake
-                img.src = url;
-            }));
+        if (Array.isArray(raw.photo) && /^[a-f0-9]{32}$/.test(raw.photo[0] || '')) {
+            result.photo = { id: raw.photo[0], u: num(raw.photo[1], -1, 1, 0), v: num(raw.photo[2], -1, 1, 0), s: num(raw.photo[3], ...SIZE_RANGE, 1) };
         }
-        return loadingImages.get(url);
+        if (Array.isArray(raw.msg)) {
+            result.msg = { dx: num(raw.msg[0], -1, 1, 0), dy: num(raw.msg[1], -1, 1, 0), size: num(raw.msg[2], ...SIZE_RANGE, 1) };
+        }
+        return result;
     }
 
-    function drawRenderedCake(svg, cfg, found) {
-        const uid = svg.dataset.uid || (svg.dataset.uid = 'c' + Math.random().toString(36).slice(2, 8));
-        const { rig } = found;
-        const layers = renderedLayers(rig, cfg);
-        const drip = (cfg.toppings || []).includes('chocolate_drip');
-        const scale = renderedScale(found, cfg.size);
-        const url = (name) => `${RENDERS.base}${rig.layers[name].file}?v=${RENDERS.version}`;
-        const key = JSON.stringify([found.key, layers.map((l) => l[0]), scale]);
-        const animating = cfg.animateTiers || cfg.popAll || (cfg.popSet && cfg.popSet.size);
-
-        // Same layers as last time (e.g. only the colours or the message changed): colours update
-        // through CSS variables on their own, so just rewrite the message.
-        if (svg.dataset.renderKey === key && !animating) {
-            const msg = svg.querySelector('.cb-msg');
-            if (msg) msg.innerHTML = renderedMessage(rig, cfg.message, drip, uid);
-            return;
-        }
-
-        // Wait until every image is ready so the cake never shows up half-built.
-        const missing = layers.map((l) => url(l[0])).filter((u) => !loadedImages.has(u));
-        if (missing.length) {
-            svg.dataset.waitingFor = key;
-            const slow = new Promise((resolve) => setTimeout(resolve, 5000));
-            Promise.race([Promise.all(missing.map(loadImage)), slow]).then(() => {
-                if (svg.dataset.waitingFor !== key) return;
-                missing.forEach((u) => loadedImages.add(u));
-                drawRenderedCake(svg, cfg, found);
-            });
-            return;
-        }
-        delete svg.dataset.waitingFor;
-        svg.dataset.renderKey = key;
-
-        const popOn = (topping) => topping && (cfg.popAll || (cfg.popSet && cfg.popSet.has(topping)));
-        const image = ([name, tint]) => {
-            const [x, y, w, h] = rig.layers[name].box;
-            return `<image href="${url(name)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${tint ? ` filter="url(#${uid}-tint-${tint})"` : ''}/>`;
-        };
-        // Toppings are grouped per topping so a newly added one can pop in.
-        const groupHtml = (group) => {
-            let html = '';
-            let open = null;
-            layers.filter((l) => l[2] === group).forEach((l) => {
-                const topping = l[3];
-                if (topping !== open) {
-                    if (open !== null) html += '</g>';
-                    html += topping
-                        ? `<g class="cb-top-item${popOn(topping) ? ' cb-pop' : ''}" data-t="${topping}"${popOn(topping) && cfg.popAll ? ' style="animation-delay:.5s"' : ''}>`
-                        : '<g>';
-                    open = topping;
-                }
-                html += image(l);
-            });
-            return open !== null ? html + '</g>' : html;
-        };
-        const tint = (name, color) => `<filter id="${uid}-tint-${name}" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
-                <feFlood style="flood-color:var(${color})" result="c"/>
-                <feComposite in="c" in2="SourceGraphic" operator="arithmetic" k1="1" k2="0" k3="0" k4="0"/>
-            </filter>`;
-        const [ax, ay] = rig.anchor;
-        const lift = drip ? rig.drip_lift : 0;
-        svg.innerHTML = `<defs>${tint('base', '--cb-base')}${tint('accent', '--cb-accent')}</defs>
-            <g transform="translate(${ax} ${ay}) scale(${scale}) translate(${-ax} ${-ay})">
-                ${groupHtml('back')}
-                <g class="cb-tier${cfg.animateTiers ? ' cb-drop' : ''}">
-                    ${groupHtml('cake')}
-                    <g class="cb-msg">${renderedMessage(rig, cfg.message, drip, uid)}</g>
-                    <g transform="translate(0 ${-lift})">${groupHtml('top')}</g>
-                </g>
-                ${groupHtml('front')}
-            </g>`;
-
-        // Shape cards: zoom in on the cake.
-        if (svg.classList.contains('cb-thumb')) {
-            const boxes = layers.filter((l) => l[2] !== 'top').map((l) => rig.layers[l[0]].box);
-            const top = Math.min(...boxes.map((b) => b[1])) - 6;
-            const bottom = Math.max(...boxes.map((b) => b[1] + b[3])) + 4;
-            const h = bottom - top;
-            const w = (h * 38) / 25;
-            svg.setAttribute('viewBox', `${r1(200 - w / 2)} ${r1(top)} ${r1(w)} ${r1(h)}`);
-        }
-    }
-
-    function drawCake(svg, cfg) {
-        const found = cfg.shape ? rigFor(cfg.shape, cfg.tiers, cfg.size) : null;
-        if (found) drawRenderedCake(svg, cfg, found);
-        else drawVectorCake(svg, cfg);
-    }
+    // Bento cakes come in a box; the customer can hide it to see the cake on its own (preview only).
+    const boxToggle = $('#cb-box-toggle');
+    let showBox = true;
+    boxToggle.addEventListener('click', () => {
+        showBox = !showBox;
+        boxToggle.setAttribute('aria-pressed', String(showBox));
+        boxToggle.title = showBox ? 'Hide the box' : 'Show the box';
+        drawPreview(readState());
+    });
 
     function drawPreview(s) {
-        applyColors(els.svg, s.base, s.accent);
+        const colors = paint(s);
+        lastInk = CD.applyColors(els.svg, colors);
+        CD.applyColors(form, colors);   // the option cards (topping chips, style chips) follow the cake's colors too
         const geometry = s.recipe ? `${s.recipe.id}|${s.size ? s.size.label : ''}` : '';
         const animateTiers = !reduceMotion && geometry !== '' && geometry !== previous.geometry;
         const popSet = new Set(reduceMotion ? [] : s.toppings.filter((t) => !previous.toppings.has(t)));
-        drawCake(els.svg, {
+        const hadFocus = els.svg.contains(document.activeElement);
+        const isBento = !!(s.recipe && s.recipe.shape === 'bento');
+        boxToggle.hidden = !isBento;
+        CD.drawCake(els.svg, {
+            hideBox: isBento && !showBox,
             shape: s.recipe ? s.recipe.shape : '',
             tiers: s.recipe ? s.recipe.tiers : 1,
             size: s.size ? s.size.label : '',
             finish: s.finish ? s.finish.name : '',
             toppings: s.toppings,
             message: s.message,
+            style: s.style,
+            piping: s.piping,
+            finish2: s.finish2,
+            photo: layout.photo ? { src: `${data.photoUrl}${layout.photo.id}.jpg`, u: layout.photo.u, v: layout.photo.v, s: layout.photo.s } : null,
+            dripTint: isHex(s.colors.drip),
+            font: s.font,
+            msg: layout.msg,
+            items: layout.items,
+            selected,
+            interactive: true,
             animateTiers,
             popAll: animateTiers && s.toppings.length > 0,
             popSet,
         });
+        // Redrawing replaces the pieces; keep keyboard focus on the selected one.
+        if (hadFocus && typeof selected === 'number') {
+            const piece = els.svg.querySelector(`.cb-piece[data-i="${selected}"]`);
+            if (piece) piece.focus({ preventScroll: true });
+        }
         previous = { geometry, toppings: new Set(s.toppings) };
     }
 
@@ -980,19 +411,95 @@
         return dot;
     }
 
-    const colorLabel = (hex, group) => (group === 'accent' ? data.accentColors : data.baseColors)[hex] || `Custom ${hex}`;
+    // Preset name, or a description of a custom color. Same rules as cakeColorName() in cake_options.php,
+    // so the builder and the production queue name a color the same way.
+    const ALL_COLORS = Object.assign({}, ...GROUPS.slice().reverse().map((g) => data.colorGroups[g].colors));
+    function colorLabel(hex, group) {
+        const all = { ...ALL_COLORS, ...data.colorGroups[group].colors };
+        return all[hex] || describeColor(hex, all);
+    }
+
+    // Name of a group's current choice, e.g. "Rose", "Match accent" or "Custom light green".
+    const choiceLabel = (group, s) => (isHex(s.colors[group]) ? colorLabel(s.colors[group], group) : data.colorGroups[group].auto || '');
+
+    function describeColor(hex, palette) {
+        const [r, g, b] = hexToRgb(hex);
+        let nearest = '';
+        let best = Infinity;
+        Object.entries(palette).forEach(([presetHex, presetName]) => {
+            const [pr, pg, pb] = hexToRgb(presetHex);
+            const mean = (r + pr) / 2;
+            const distance = Math.sqrt((2 + mean / 256) * (r - pr) ** 2 + 4 * (g - pg) ** 2 + (2 + (255 - mean) / 256) * (b - pb) ** 2);
+            if (distance < best) {
+                best = distance;
+                nearest = presetName;
+            }
+        });
+        if (best <= 40) return `Custom, near ${nearest}`;
+
+        const [rf, gf, bf] = [r / 255, g / 255, b / 255];
+        const max = Math.max(rf, gf, bf);
+        const min = Math.min(rf, gf, bf);
+        const d = max - min;
+        const l = (max + min) / 2;
+        const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+        if (s < 0.15) {
+            if (l >= 0.92) return 'Custom white';
+            if (l >= 0.7) return 'Custom light gray';
+            if (l >= 0.35) return 'Custom gray';
+            if (l >= 0.15) return 'Custom dark gray';
+            return 'Custom black';
+        }
+        let h;
+        if (max === rf) h = (((gf - bf) / d) + 6) % 6;
+        else if (max === gf) h = (bf - rf) / d + 2;
+        else h = (rf - gf) / d + 4;
+        h *= 60;
+
+        let hue;
+        if (h < 15 || h >= 345) hue = l >= 0.7 ? 'pink' : 'red';
+        else if (h < 45) hue = l < 0.4 ? 'brown' : 'orange';
+        else if (h < 70) hue = l < 0.35 ? 'olive' : 'yellow';
+        else if (h < 165) hue = 'green';
+        else if (h < 195) hue = 'teal';
+        else if (h < 255) hue = 'blue';
+        else if (h < 290) hue = 'purple';
+        else hue = 'pink';
+
+        let shade = '';
+        if (hue !== 'brown' && hue !== 'olive') {
+            if (l >= 0.8) shade = 'pale ';
+            else if (l >= 0.62) shade = 'light ';
+            else if (l < 0.3) shade = 'dark ';
+        }
+        return `Custom ${shade}${hue}`;
+    }
 
     function renderSummary(s) {
         const colors = document.createElement('span');
-        if (s.base) colors.append(colorDot(s.base), colorLabel(s.base, 'base'));
-        if (s.accent) colors.append(document.createTextNode('  '), colorDot(s.accent), `${colorLabel(s.accent, 'accent')} accents`);
+        const addColor = (hex, text) => colors.append(document.createTextNode(colors.childNodes.length ? '  ' : ''), colorDot(hex), text);
+        if (s.base) addColor(s.base, colorLabel(s.base, 'base'));
+        if (s.style !== 'solid') addColor(s.colors.base2, `${colorLabel(s.colors.base2, 'base2')} (${s.style === 'ombre' ? 'ombre, fading in from the top' : 'upper tier'})`);
+        if (s.accent) addColor(s.accent, `${colorLabel(s.accent, 'accent')} accents`);
+        // Only the extra colors that were actually changed.
+        const extras = [['trim', 'piping & trim'], ['drip', 'drip'], ['board', 'stand'], ['ink', 'message']];
+        extras.filter(([g]) => groupUsed(g, s) && isHex(s.colors[g]) && (g !== 'ink' || s.message))
+            .forEach(([g, what]) => addColor(s.colors[g], `${colorLabel(s.colors[g], g)} ${what}`));
+
+        const pieceCounts = {};
+        layout.items.forEach((item) => { pieceCounts[item.k] = (pieceCounts[item.k] || 0) + 1; });
+        const toppingText = s.toppings.map((t) => (pieceCounts[t] ? `${data.toppings[t]} ×${pieceCounts[t]}` : data.toppings[t])).join(', ');
+        const toppingList = [toppingText, layout.photo ? 'Photo on top' : ''].filter(Boolean).join(', ');
+        const finishName = s.finish && (s.finish2 ? `${s.finish.name} (upper tier: ${s.finish2})` : s.finish.name);
+        const finishText = s.finish && (isButtercream(s) && s.piping !== 'rosette'
+            ? `${finishName} · ${data.pipingStyles[s.piping].toLowerCase()} border` : finishName);
         const rows = [
             ['Cake', s.recipe && s.recipe.name, 0],
             ['Size', s.size && s.size.label, 1],
-            ['Finish', s.finish && s.finish.name, 2],
+            ['Finish', finishText, 2],
             ['Colors', colors, 3],
-            ['Toppings', s.toppings.length ? s.toppings.map((t) => data.toppings[t]).join(', ') : 'None', 4],
-            ['Message', s.message ? `“${s.message}”` : 'No message', 5],
+            ['Toppings', toppingList || 'None', 4],
+            ['Message', s.message ? `“${s.message}” · ${data.fonts[s.font]}` : 'No message', 5],
         ];
         els.summary.replaceChildren(...rows.map(([label, value, step]) => {
             const wrap = document.createElement('div');
@@ -1014,7 +521,17 @@
 
     // ---------- Main update ----------
     function update() {
-        const s = readState();
+        let s = readState();
+        // An ombre or two-tone cake needs a second color: start with one that differs from the cake color.
+        if ((checkedValue('cake-style') || 'solid') !== 'solid' && !s.colors.base2) {
+            selectColor('base2', s.colors.base === '#F9C6D0' ? '#D9C8F0' : '#F9C6D0');
+            s = readState();
+        }
+        syncItems(s.toppings);
+        if (selected === 'msg' && !s.message) selected = null;
+        if (selected === 'photo' && !layout.photo) selected = null;
+        if (syncFinish2(s)) s = readState();
+        els.layout.value = layoutJson();
         const reach = reachableStep(s);
 
         els.dots.forEach((dot, i) => {
@@ -1048,17 +565,66 @@
         els.toppingCount.classList.toggle('is-full', full);
 
         els.messageCount.textContent = `${els.message.value.length}/${els.message.maxLength}`;
-        els.colorNames.textContent = s.base && s.accent
-            ? `${colorLabel(s.base, 'base')} cake with ${colorLabel(s.accent, 'accent')} accents`
-            : '';
-        els.notReady.hidden = !(s.finish && !s.finish.ready);
-        applyColors(els.toppingStep, s.base, s.accent);
+        if (s.base && s.accent) {
+            const cake = s.style === 'ombre' ? `${colorLabel(s.base, 'base')} to ${colorLabel(s.colors.base2, 'base2')} ombre cake`
+                : s.style === 'tiers' ? `${colorLabel(s.base, 'base')} and ${colorLabel(s.colors.base2, 'base2')} tiers`
+                    : `${colorLabel(s.base, 'base')} cake`;
+            els.colorNames.textContent = `${cake} with ${colorLabel(s.accent, 'accent')} accents`;
+        } else {
+            els.colorNames.textContent = '';
+        }
+
+        // Options that depend on the cake: piping for buttercream, two-tone tiers for two-tier cakes.
+        // The border can be chosen when any tier is buttercream.
+        els.piping.hidden = !(isButtercream(s) || /butter/i.test(s.finish2));
+        const tiersInput = $('#style-tiers');
+        tiersInput.disabled = s.tierCount < 2;
+        tiersInput.labels[0].hidden = s.tierCount < 2;
+        if (tiersInput.checked && tiersInput.disabled) $('#style-solid').checked = true;
 
         els.caption.textContent = s.recipe
             ? [s.recipe.name, s.size && s.size.label, s.finish && s.finish.name].filter(Boolean).join(' · ')
             : CAPTIONS[0];
+        drawPreview(s);   // also works out the automatic message color, which the color dots below show
+
+        // "Color to change" row: hide the colors this cake doesn't have, and show each one's current shade.
+        GROUPS.forEach((group) => {
+            const used = groupUsed(group, s);
+            const input = $(`#target-${group}`);
+            input.disabled = !used;
+            input.labels[0].hidden = !used;
+            $(`#cb-target-${group}-dot`).style.background = shownColor(group, s);
+        });
+        if (!groupUsed(wheel.target, s)) setWheelTarget('base');
+        $('#cb-drip-color').hidden = !s.toppings.includes('chocolate_drip');
+        $('#cb-drip-dot').style.background = shownColor('drip', s);
+        $('#cb-drip-name').textContent = `${choiceLabel('drip', s)} drip`;
+        $('#cb-ink-dot').style.background = shownColor('ink', s);
+        $('#cb-ink-name').textContent = `${choiceLabel('ink', s)} color`;
+
+        // Selection toolbar under the cake.
+        const piece = typeof selected === 'number' ? layout.items[selected] : null;
+        els.pieceBar.hidden = selected === null;
+        if (selected !== null) {
+            els.pieceName.textContent = piece ? PIECE_NAMES[piece.k] : selected === 'photo' ? 'Photo' : 'Message';
+            const count = piece ? layout.items.filter((item) => item.k === piece.k).length : 0;
+            $('#cb-piece-copy').hidden = !piece;
+            $('#cb-piece-copy').disabled = count >= data.maxPiecesEach;
+            $('#cb-piece-remove').hidden = !piece && selected !== 'photo';
+            $('#cb-piece-center').hidden = !!piece;
+            const size = piece ? piece.s : selected === 'photo' ? layout.photo.s : layout.msg.size;
+            $('[data-piece="smaller"]', els.pieceBar).disabled = size <= SIZE_RANGE[0] + 0.001;
+            $('[data-piece="bigger"]', els.pieceBar).disabled = size >= SIZE_RANGE[1] - 0.001;
+        }
+        els.dragHint.hidden = selected !== null || !s.recipe || !(layout.items.length || s.message || layout.photo);
+
+        // Photo on top.
+        photoStatus.textContent = photoMessage || (layout.photo ? 'Your photo is on the cake. Drag it to move it, or tap it to resize.' : PHOTO_HELP);
+        $('#cb-photo-add-label').textContent = layout.photo ? 'Change photo' : 'Add a photo';
+        $('#cb-photo-remove').hidden = !layout.photo;
+
         if (current === LAST_STEP) renderSummary(s);
-        drawPreview(s);
+        queueHistory();
     }
 
     function goTo(step, { focus = true } = {}) {
@@ -1169,13 +735,12 @@
 
     // The wheel follows whatever color is selected for the group being edited.
     function syncWheel() {
-        const hex = checkedValue(`${wheel.target}-color`) || (wheel.target === 'base' ? DEFAULT_BASE : DEFAULT_ACCENT);
+        // For a group set to "automatic", the wheel starts from the color it currently shows as.
+        const hex = shownColor(wheel.target, readState());
         const hsv = hexToHsv(hex);
         if (hsv.s === 0 || hsv.v === 0) hsv.h = wheel.h; // grays have no hue; keep the last one
         Object.assign(wheel, hsv);
         drawWheel(hex);
-        $('#cb-target-base-dot').style.background = checkedValue('base-color') || DEFAULT_BASE;
-        $('#cb-target-accent-dot').style.background = checkedValue('accent-color') || DEFAULT_ACCENT;
     }
 
     // Uses the wheel's current h/s/v (or an exact code) as the color of the edited group.
@@ -1266,7 +831,29 @@
         update();
     });
 
-    els.message.addEventListener('input', update);
+    // Emoji can't be stored (the database connection is 3-byte utf8) or piped onto a cake, so they are
+    // taken out as they're typed, with a note, instead of vanishing when the cake is saved.
+    const EMOJI = /[\u{10000}-\u{10FFFF}‍️]/gu;
+    const emojiTimers = new Map();
+    function removeEmoji(input) {
+        const value = input.value;
+        const clean = value.replace(EMOJI, '');
+        if (clean === value) return;
+        const caret = input.selectionStart == null ? clean.length : value.slice(0, input.selectionStart).replace(EMOJI, '').length;
+        input.value = clean;
+        try { input.setSelectionRange(caret, caret); } catch (e) { /* not a text field */ }
+        const hint = document.getElementById(`${input.id}-emoji`);
+        if (!hint) return;
+        hint.hidden = false;
+        clearTimeout(emojiTimers.get(input));
+        emojiTimers.set(input, setTimeout(() => { hint.hidden = true; }, 5000));
+    }
+
+    els.message.addEventListener('input', () => { removeEmoji(els.message); update(); });
+    ['#cb-customer', '#cb-notes'].forEach((sel) => {
+        const input = $(sel);
+        input.addEventListener('input', () => removeEmoji(input));
+    });
     els.qty.addEventListener('input', update);
 
     $$('.cb-idea').forEach((button) => button.addEventListener('click', () => {
@@ -1288,23 +875,426 @@
     els.back.addEventListener('click', () => goTo(current - 1));
     els.next.addEventListener('click', () => goTo(current + 1));
 
+    // Buttons outside the Colors step that jump straight to one color (drip, message).
+    $$('[data-color-target]').forEach((button) => button.addEventListener('click', () => {
+        goTo(COLOR_STEP);
+        setWheelTarget(button.dataset.colorTarget);
+    }));
+
+    // ---------- Moving toppings and the message on the cake ----------
+    // Pointer position in the cake's own coordinates (its viewBox).
+    function svgPoint(event) {
+        const matrix = els.svg.getScreenCTM();
+        if (!matrix) return { x: 0, y: 0 };
+        const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+        return { x: p.x, y: p.y };
+    }
+
+    function select(what) {
+        if (selected === what) return;
+        selected = what;
+        update();
+    }
+
+    // ---------- Zooming in on the cake ----------
+    // The cake is drawn on a 400 x 360 canvas; zooming shows a smaller part of it. Dragging the cake
+    // itself (not a topping) moves the view around while zoomed in.
+    const VIEW = { w: 400, h: 360, max: 3 };
+    const view = { k: 1, x: VIEW.w / 2, y: VIEW.h / 2 };
+    function applyView() {
+        view.k = clamp(view.k, 1, VIEW.max);
+        const w = VIEW.w / view.k;
+        const h = VIEW.h / view.k;
+        view.x = clamp(view.x, w / 2, VIEW.w - w / 2);
+        view.y = clamp(view.y, h / 2, VIEW.h - h / 2);
+        els.svg.setAttribute('viewBox', `${r3(view.x - w / 2)} ${r3(view.y - h / 2)} ${r3(w)} ${r3(h)}`);
+        els.stage.classList.toggle('is-zoomed', view.k > 1);
+        $('#cb-zoom-in').disabled = view.k >= VIEW.max;
+        $('#cb-zoom-out').disabled = view.k <= 1;
+        $('#cb-zoom-reset').disabled = view.k <= 1;
+    }
+    // Zooms by a factor, keeping the given point of the cake (or the middle of the view) in place.
+    function zoomBy(factor, at) {
+        const before = view.k;
+        view.k = clamp(view.k * factor, 1, VIEW.max);
+        if (at) {
+            view.x = at.x + ((view.x - at.x) * before) / view.k;
+            view.y = at.y + ((view.y - at.y) * before) / view.k;
+        }
+        applyView();
+    }
+    $('#cb-zoom-in').addEventListener('click', () => zoomBy(1.5));
+    $('#cb-zoom-out').addEventListener('click', () => zoomBy(1 / 1.5));
+    $('#cb-zoom-reset').addEventListener('click', () => { view.k = 1; applyView(); });
+    // Ctrl + mouse wheel, or a pinch on a touchpad (browsers report that as Ctrl + wheel).
+    els.stage.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 1.2 : 1 / 1.2, svgPoint(event));
+    }, { passive: false });
+
+    let drag = null;
+    els.svg.addEventListener('pointerdown', (event) => {
+        if (event.button > 0) return;
+        const pieceEl = event.target.closest('.cb-piece');
+        const msgEl = pieceEl ? null : event.target.closest('.cb-msg');
+        const photoEl = pieceEl || msgEl ? null : event.target.closest('.cb-photo');
+        if (!pieceEl && !msgEl && !photoEl) {
+            // The cake itself: clears the selection, and moves the view when zoomed in.
+            if (view.k > 1) {
+                drag = { kind: 'pan', px: event.clientX, py: event.clientY, x: view.x, y: view.y, moved: false };
+                els.stage.classList.add('is-panning');
+                els.svg.setPointerCapture(event.pointerId);
+            } else {
+                select(null);
+            }
+            return;
+        }
+        event.preventDefault();
+        const start = svgPoint(event);
+        const spot = CD.pointToSpot(els.svg, start.x, start.y);
+        if (pieceEl) {
+            const index = Number(pieceEl.dataset.i);
+            const item = layout.items[index];
+            if (!item || !spot) return;
+            // Keep the piece under the finger where it was grabbed, not jumping to its foot.
+            drag = { kind: 'piece', index, item, el: pieceEl, start, du: item.u - spot[0], dv: item.v - spot[1], moved: false };
+            pieceEl.classList.add('is-dragging');
+        } else if (photoEl) {
+            if (!layout.photo || !spot) return;
+            drag = { kind: 'photo', start, du: layout.photo.u - spot[0], dv: layout.photo.v - spot[1], moved: false };
+        } else {
+            drag = { kind: 'msg', start, dx: layout.msg.dx, dy: layout.msg.dy, moved: false };
+        }
+        els.stage.classList.add('is-dragging');
+        els.svg.setPointerCapture(event.pointerId);
+    });
+
+    els.svg.addEventListener('pointermove', (event) => {
+        if (!drag) return;
+        if (drag.kind === 'pan') {
+            const rect = els.svg.getBoundingClientRect();
+            const unitsPerPixel = VIEW.w / view.k / rect.width;
+            if (Math.hypot(event.clientX - drag.px, event.clientY - drag.py) > 3) drag.moved = true;
+            view.x = drag.x - (event.clientX - drag.px) * unitsPerPixel;
+            view.y = drag.y - (event.clientY - drag.py) * unitsPerPixel;
+            applyView();
+            return;
+        }
+        const p = svgPoint(event);
+        if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 3) return;   // a tap, not a drag
+        drag.moved = true;
+        const drawn = CD.info(els.svg);
+        if (!drawn) return;
+        if (drag.kind === 'piece') {
+            const spot = CD.pointToSpot(els.svg, p.x, p.y);
+            if (!spot) return;
+            [drag.item.u, drag.item.v] = CD.clampSpot(drawn.top, spot[0] + drag.du, spot[1] + drag.dv);
+            CD.movePiece(els.svg, drag.el, drag.item.u, drag.item.v);
+        } else if (drag.kind === 'photo') {
+            const spot = CD.pointToSpot(els.svg, p.x, p.y);
+            if (!spot || !layout.photo) return;
+            placePhoto(spot[0] + drag.du, spot[1] + drag.dv);
+            drawPreview(readState());
+        } else if (drawn.msg) {
+            layout.msg.dx = clamp(drag.dx + (p.x - drag.start.x) / drawn.scale / drawn.msg.x, -1, 1);
+            layout.msg.dy = clamp(drag.dy + (p.y - drag.start.y) / drawn.scale / drawn.msg.y, -1, 1);
+            drawPreview(readState());
+        }
+    });
+
+    function endDrag(event) {
+        if (!drag) return;
+        const finished = drag;
+        drag = null;
+        els.stage.classList.remove('is-dragging', 'is-panning');
+        if (els.svg.hasPointerCapture(event.pointerId)) els.svg.releasePointerCapture(event.pointerId);
+        if (finished.kind === 'pan') {
+            if (!finished.moved) select(null);
+            return;
+        }
+        if (finished.kind === 'piece') finished.el.classList.remove('is-dragging');
+        // A tap selects (or unselects); a drag just moves, and selects what was moved.
+        const what = finished.kind === 'piece' ? finished.index : finished.kind;
+        if (finished.moved) selected = what;
+        else selected = selected === what ? null : what;
+        update();
+    }
+    els.svg.addEventListener('pointerup', endDrag);
+    els.svg.addEventListener('pointercancel', endDrag);
+    // Touch screens: stop the page from scrolling while something on the cake is being dragged.
+    els.svg.addEventListener('touchstart', (event) => {
+        if (view.k > 1 || event.target.closest('.cb-piece, .cb-msg, .cb-photo')) event.preventDefault();
+    }, { passive: false });
+
+    // Keyboard: Tab to a piece, arrows to move it, + and - to resize, Delete to remove, Esc to finish.
+    els.svg.addEventListener('focusin', (event) => {
+        const pieceEl = event.target.closest('.cb-piece');
+        if (pieceEl && !drag) select(Number(pieceEl.dataset.i));
+    });
+    els.svg.addEventListener('keydown', (event) => {
+        const item = typeof selected === 'number' ? layout.items[selected] : null;
+        if (!item) return;
+        const step = event.shiftKey ? 0.12 : 0.04;
+        const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+        if (moves[event.key]) {
+            const drawn = CD.info(els.svg);
+            if (!drawn || !drawn.top) return;
+            [item.u, item.v] = CD.clampSpot(drawn.top, item.u + moves[event.key][0], item.v + moves[event.key][1]);
+        } else if (event.key === '+' || event.key === '=') pieceAction('bigger');
+        else if (event.key === '-') pieceAction('smaller');
+        else if (event.key === 'Delete' || event.key === 'Backspace') pieceAction('remove');
+        else if (event.key === 'Escape') selected = null;
+        else return;
+        event.preventDefault();
+        update();
+    });
+
+    // ---------- Photo on top (edible print) ----------
+    // Moves the photo, keeping all of it on the cake.
+    function placePhoto(u, v) {
+        const drawn = CD.info(els.svg);
+        if (!layout.photo || !drawn || !drawn.top) return;
+        const s = readState();
+        [layout.photo.u, layout.photo.v] = CD.clampPhoto(drawn.top, { size: s.size ? s.size.label : '', photo: layout.photo }, u, v);
+    }
+
+    // The browser crops the picture to a centered square and shrinks it before sending, so uploads stay
+    // small and the server only ever receives a plain JPEG.
+    function squareJpeg(file) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                const side = Math.min(img.naturalWidth, img.naturalHeight);
+                if (side < 16) { reject(new Error('small')); return; }
+                const size = Math.min(1024, side);
+                const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+                const context = canvas.getContext('2d');
+                context.fillStyle = '#fff';   // behind see-through pictures
+                context.fillRect(0, 0, size, size);
+                context.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+                canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('encode'))), 'image/jpeg', 0.88);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('read')); };
+            img.src = url;
+        });
+    }
+
+    const photoStatus = $('#cb-photo-status');
+    const PHOTO_HELP = photoStatus.textContent;
+    let photoMessage = '';   // an upload problem or progress note, shown instead of the usual help text
+    $('#cb-photo-add').addEventListener('click', () => $('#cb-photo-file').click());
+    $('#cb-photo-file').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        event.target.value = '';   // so picking the same file again still counts as a change
+        if (!file) return;
+        const button = $('#cb-photo-add');
+        button.disabled = true;
+        photoMessage = 'Adding your photo…';
+        update();
+        try {
+            const body = new FormData();
+            body.append('photo', await squareJpeg(file), 'photo.jpg');
+            const response = await fetch(data.photoUpload, { method: 'POST', body });
+            const reply = await response.json();
+            if (!response.ok || !reply.id) throw new Error(reply.error || 'upload');
+            layout.photo = { id: reply.id, u: 0, v: 0, s: 1 };
+            selected = 'photo';
+            photoMessage = '';
+        } catch (error) {
+            photoMessage = error.message === 'read' || error.message === 'small' || error.message === 'encode'
+                ? 'That file could not be used as a picture. Please try another one.'
+                : 'The photo could not be added. Please check your connection and try again.';
+        }
+        button.disabled = false;
+        update();
+    });
+    $('#cb-photo-remove').addEventListener('click', () => {
+        layout.photo = null;
+        if (selected === 'photo') selected = null;
+        photoMessage = '';
+        update();
+    });
+
+    // The toolbar under the cake, for whatever is selected: a piece, the message or the photo.
+    function pieceAction(action) {
+        const item = typeof selected === 'number' ? layout.items[selected] : null;
+        const target = item || (selected === 'msg' ? layout.msg : selected === 'photo' ? layout.photo : null);
+        if (!target) return;
+        const sizeKey = selected === 'msg' ? 'size' : 's';
+        if (action === 'bigger') target[sizeKey] = clamp(target[sizeKey] + 0.15, ...SIZE_RANGE);
+        else if (action === 'smaller') target[sizeKey] = clamp(target[sizeKey] - 0.15, ...SIZE_RANGE);
+        else if (action === 'center' && selected === 'msg') Object.assign(layout.msg, { dx: 0, dy: 0 });
+        else if (action === 'center' && selected === 'photo') Object.assign(layout.photo, { u: 0, v: 0 });
+        else if (action === 'done') selected = null;
+        else if (action === 'remove' && selected === 'photo') {
+            layout.photo = null;
+            selected = null;
+        } else if (action === 'copy' && item) {
+            if (layout.items.filter((other) => other.k === item.k).length >= data.maxPiecesEach) return;
+            const drawn = CD.info(els.svg);
+            const [u, v] = drawn && drawn.top ? CD.clampSpot(drawn.top, item.u + (item.u > 0.4 ? -0.3 : 0.3), item.v - 0.12) : [0, 0];
+            layout.items.push({ ...item, u, v });
+            selected = layout.items.length - 1;
+        } else if (action === 'remove' && item) {
+            layout.items.splice(selected, 1);
+            selected = null;
+            // Removing the last piece of a topping also unticks that topping.
+            if (!layout.items.some((other) => other.k === item.k)) {
+                const input = findInput('toppings[]', item.k);
+                if (input) input.checked = false;
+            }
+        }
+        // A bigger photo may no longer fit where it was.
+        if (layout.photo && selected === 'photo') placePhoto(layout.photo.u, layout.photo.v);
+    }
+    els.pieceBar.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-piece]');
+        if (!button || button.disabled) return;
+        pieceAction(button.dataset.piece);
+        update();
+    });
+
+    // ---------- Whole designs: undo, redo, start over, surprise ----------
+    const blankDesign = () => ({
+        recipe: '', size: '', variant: '',
+        colors: { base: DEFAULT_BASE, base2: '', accent: DEFAULT_ACCENT, trim: 'auto', drip: 'auto', board: 'auto', ink: 'auto' },
+        style: 'solid', piping: 'rosette', font: 'script', finish2: '', toppings: [], message: '', layout: blankLayout(),
+    });
+
+    // Everything that makes up the cake, as plain data.
+    function currentDesign() {
+        return {
+            recipe: checkedValue('rec-Id'),
+            size: checkedValue('size'),
+            variant: checkedValue('recvar-Id'),
+            colors: Object.fromEntries(GROUPS.map((g) => [g, checkedValue(`${g}-color`)])),
+            style: checkedValue('cake-style') || 'solid',
+            piping: checkedValue('piping') || 'rosette',
+            font: checkedValue('msg-font') || 'script',
+            finish2: checkedValue('finish2'),
+            toppings: $$('.cb-topping:checked', form).map((i) => i.value),
+            message: els.message.value,
+            layout: JSON.parse(JSON.stringify(layout)),
+        };
+    }
+
+    // Puts a design back into the form (the opposite of currentDesign).
+    function applyDesign(design) {
+        const d = { ...blankDesign(), ...design };
+        const check = (name, value, fallback) => {
+            const input = findInput(name, value) || findInput(name, fallback);
+            if (input) input.checked = true;
+        };
+        $$('input[name="rec-Id"], .cb-topping', form).forEach((i) => { i.checked = false; i.disabled = false; });
+        els.sizes.replaceChildren();
+        els.finishes.replaceChildren();
+        if (d.recipe && recipes.has(d.recipe)) {
+            findInput('rec-Id', d.recipe).checked = true;
+            renderSizes(recipes.get(d.recipe), d.size);
+            renderFinishes(readState().size, '', d.variant);
+        }
+        GROUPS.forEach((group) => {
+            clearCustomColor(group);
+            $$(`input[name="${group}-color"]`, form).forEach((i) => { i.checked = false; });
+            const value = (d.colors || {})[group] || blankDesign().colors[group];
+            if (isHex(value) || value === 'auto') selectColor(group, value);
+        });
+        check('cake-style', d.style, 'solid');
+        check('piping', d.piping, 'rosette');
+        check('msg-font', d.font, 'script');
+        finish2Options.dataset.signature = '?';   // rebuild the upper tier choices for this cake
+        syncFinish2(readState());
+        check('finish2', d.finish2 || '', '');
+        (d.toppings || []).forEach((key) => {
+            const input = findInput('toppings[]', key);
+            if (input) input.checked = true;
+        });
+        els.message.value = d.message || '';
+        layout = { ...blankLayout(), ...JSON.parse(JSON.stringify(d.layout || {})) };
+        selected = null;
+        syncWheel();
+    }
+
+    // Undo history: a snapshot is saved shortly after each change, so a drag of the color wheel
+    // or a typed word counts as one step.
+    const history = { stack: [], index: -1, timer: 0, paused: false };
+    function refreshHistoryButtons() {
+        els.undo.disabled = history.index <= 0;
+        els.redo.disabled = history.index >= history.stack.length - 1;
+    }
+    function commitHistory() {
+        clearTimeout(history.timer);
+        history.timer = 0;
+        const snapshot = JSON.stringify(currentDesign());
+        if (snapshot === history.stack[history.index]) return;
+        history.stack.splice(history.index + 1);
+        history.stack.push(snapshot);
+        if (history.stack.length > 80) history.stack.shift();
+        history.index = history.stack.length - 1;
+        refreshHistoryButtons();
+    }
+    function queueHistory() {
+        if (history.paused) return;
+        clearTimeout(history.timer);
+        history.timer = setTimeout(commitHistory, 350);
+    }
+    function stepHistory(by) {
+        if (history.timer) commitHistory();   // include a change that hasn't been saved yet
+        const index = history.index + by;
+        if (index < 0 || index >= history.stack.length) return;
+        history.index = index;
+        history.paused = true;
+        applyDesign(JSON.parse(history.stack[index]));
+        // Stay on the current step unless it can no longer be reached (e.g. the shape was undone).
+        goTo(Math.min(current, reachableStep(readState())), { focus: false });
+        history.paused = false;
+        refreshHistoryButtons();
+    }
+    els.undo.addEventListener('click', () => stepHistory(-1));
+    els.redo.addEventListener('click', () => stepHistory(1));
+    document.addEventListener('keydown', (event) => {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+        if (event.target.closest('input[type="text"], input[type="number"], input[type="date"], textarea')) return;   // keep the browser's own undo while typing
+        const key = event.key.toLowerCase();
+        if (key === 'z' && !event.shiftKey) stepHistory(-1);
+        else if (key === 'y' || (key === 'z' && event.shiftKey)) stepHistory(1);
+        else return;
+        event.preventDefault();
+    });
+
     $('#cb-surprise').addEventListener('click', () => {
         const pick = (list) => list[Math.floor(Math.random() * list.length)];
-        const recipeInput = pick($$('input[name="rec-Id"]', form));
-        recipeInput.checked = true;
-        onRecipeChange();
-        pick($$('input[name="size"]', form)).checked = true;
-        onSizeChange();
-        pick($$('input[name="recvar-Id"]', form)).checked = true;
-        const baseInput = pick($$('input[name="base-color"]:not(.cb-custom)', form));
-        baseInput.checked = true;
-        pick($$('input[name="accent-color"]:not(.cb-custom)', form).filter((i) => i.value !== baseInput.value)).checked = true;
-        syncWheel();
-        const toppingInputs = $$('.cb-topping', form);
-        toppingInputs.forEach((i) => { i.checked = false; i.disabled = false; });
-        const count = 1 + Math.floor(Math.random() * 3);
-        toppingInputs.sort(() => Math.random() - 0.5).slice(0, count).forEach((i) => { i.checked = true; });
-        els.message.value = Math.random() < 0.7 ? pick(MESSAGE_IDEAS) : '';
+        const chance = (p) => Math.random() < p;
+        // Pick the shape first, so every shape is equally likely however many sizes it has.
+        const recipe = pick(data.recipes);
+        const size = pick(recipe.sizes);
+        const shades = (group) => Object.keys(data.colorGroups[group].colors);
+        const base = pick(shades('base'));
+        const twoTiers = CD.tierCount(recipe.tiers, size.label) > 1;
+        const style = twoTiers && chance(0.5) ? 'tiers' : chance(0.3) ? 'ombre' : 'solid';
+        applyDesign({
+            recipe: recipe.id,
+            size: size.label,
+            variant: pick(size.finishes).id,
+            colors: {
+                base,
+                base2: style === 'solid' ? '' : pick(shades('base2').filter((c) => c !== base)),
+                accent: pick(shades('accent').filter((c) => c !== base)),
+                trim: 'auto',
+                drip: chance(0.3) ? pick(shades('drip')) : 'auto',
+                board: chance(0.25) ? pick(shades('board')) : 'auto',
+                ink: 'auto',
+            },
+            style,
+            piping: pick(Object.keys(data.pipingStyles)),
+            font: pick(Object.keys(data.fonts)),
+            finish2: twoTiers && chance(0.4) ? pick(size.finishes).name : '',
+            toppings: Object.keys(data.toppings).sort(() => Math.random() - 0.5).slice(0, 1 + Math.floor(Math.random() * 3)),
+            message: chance(0.7) ? pick(MESSAGE_IDEAS) : '',
+        });
         for (let i = 0; i <= LAST_STEP; i++) visited.add(i);
         shake();
         goTo(LAST_STEP);
@@ -1312,15 +1302,8 @@
 
     $('#cb-reset').addEventListener('click', () => {
         if (readState().recipe && !window.confirm('Start over with a new cake? Your current design will be cleared.')) return;
-        $$('input[type="radio"], input[type="checkbox"]', form).forEach((i) => { i.checked = false; i.disabled = false; });
-        els.sizes.replaceChildren();
-        els.finishes.replaceChildren();
-        clearCustomColor('base');
-        clearCustomColor('accent');
-        findInput('base-color', DEFAULT_BASE).checked = true;
-        findInput('accent-color', DEFAULT_ACCENT).checked = true;
+        applyDesign(blankDesign());
         setWheelTarget('base');
-        els.message.value = '';
         els.qty.value = '1';
         $('#cb-customer').value = '';
         $('#cb-pickup').value = '';
@@ -1349,6 +1332,7 @@
             return;
         }
         submitting = true;
+        els.layout.value = layoutJson();
         els.submit.disabled = true;
         els.submit.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Sending to the kitchen...';
         if (reduceMotion) {
@@ -1367,34 +1351,43 @@
         let accent = '#E8738A';
         if (name.includes('chocolate')) [base, accent] = ['#7B4B36', '#F9C6D0'];
         else if (name.includes('red velvet')) [base, accent] = ['#B23A48', '#FFFFFF'];
-        applyColors(thumb, base, accent);
-        drawCake(thumb, { shape: thumb.dataset.shape, tiers: Number(thumb.dataset.tiers) || 1, size: thumb.dataset.size, finish: 'Buttercream', toppings: [] });
+        CD.applyColors(thumb, { base, accent });
+        CD.drawCake(thumb, { shape: thumb.dataset.shape, tiers: Number(thumb.dataset.tiers) || 1, size: thumb.dataset.size, finish: 'Buttercream', toppings: [] });
     });
 
     const initial = data.initial;
     if (initial) {
         // Coming back from a failed save: restore every choice and open the review.
-        const recipeInput = findInput('rec-Id', initial.recipe);
-        if (recipeInput) {
-            recipeInput.checked = true;
-            renderSizes(recipes.get(initial.recipe), initial.size);
-            renderFinishes(readState().size, '', initial.variant);
-        }
-        if (/^#[0-9A-F]{6}$/.test(initial.base || '')) selectColor('base', initial.base);
-        if (/^#[0-9A-F]{6}$/.test(initial.accent || '')) selectColor('accent', initial.accent);
-        syncWheel();
-        (initial.toppings || []).forEach((key) => {
-            const input = findInput('toppings[]', key);
-            if (input) input.checked = true;
+        const sent = (value) => String(value || '').toUpperCase();
+        const orAuto = (value) => (isHex(sent(value)) ? sent(value) : 'auto');
+        applyDesign({
+            recipe: initial.recipe,
+            size: initial.size,
+            variant: initial.variant,
+            colors: {
+                base: isHex(sent(initial.base)) ? sent(initial.base) : DEFAULT_BASE,
+                base2: isHex(sent(initial.base2)) ? sent(initial.base2) : '',
+                accent: isHex(sent(initial.accent)) ? sent(initial.accent) : DEFAULT_ACCENT,
+                trim: orAuto(initial.trim),
+                drip: orAuto(initial.drip),
+                board: orAuto(initial.board),
+                ink: orAuto(initial.ink),
+            },
+            style: initial.style,
+            piping: initial.piping,
+            font: initial.font,
+            finish2: initial.finish2,
+            toppings: initial.toppings || [],
+            message: els.message.value,
+            layout: parseLayout(initial.layout),
         });
         for (let i = 0; i <= LAST_STEP; i++) visited.add(i);
         for (let i = 0; i <= 3; i++) completed.add(i);
         goTo(LAST_STEP, { focus: false });
     } else {
-        findInput('base-color', DEFAULT_BASE).checked = true;
-        findInput('accent-color', DEFAULT_ACCENT).checked = true;
-        syncWheel();
+        applyDesign(blankDesign());
         completed.add(3);
         goTo(0, { focus: false });
     }
+    commitHistory();   // the starting point for Undo
 })();

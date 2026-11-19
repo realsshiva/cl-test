@@ -1,0 +1,10 @@
+{
+  "recipe_name": "Mini Custom Cake",
+  "size": "",
+  "finish": "Semi-fondant",
+  "base_color": "#D9C8F0",
+  "accent_color": "#9D7BD8",
+  "toppings": ["strawberries", "gold_leaf"],
+  "message": "Hi!",
+  "render": {"views": ["hero"]}
+}

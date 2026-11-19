@@ -1,0 +1,21 @@
+{
+  "recipe_name": "Round 2-Tier Custom Cake",
+  "size": "8x4/6x3",
+  "finish": "Buttercream",
+  "base_color": "#F9C6D0",
+  "accent_color": "#D4A63A",
+  "toppings": ["chocolate_drip", "macarons", "flowers", "gold_leaf"],
+  "message": "Happy Birthday, Mia!",
+  "customer": "Sample Customer",
+  "pickup_date": "2026-11-20",
+  "notes": "Pastel theme",
+  "render": {
+    "output": "C:/CakeRenders/mia_birthday.png",
+    "views": ["hero", "three_quarter", "top"],
+    "engine": "CYCLES",
+    "samples": 128,
+    "resolution": [1600, 1600],
+    "stand": "white",
+    "message_placement": "front"
+  }
+}

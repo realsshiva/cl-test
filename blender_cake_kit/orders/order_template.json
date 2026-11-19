@@ -1,0 +1,26 @@
+{
+  "recipe_name": "Round Custom Cake",
+  "shape": null,
+  "tiers": null,
+  "size": "6x4",
+  "finish": "Buttercream",
+  "base_color": "#FFF4DC",
+  "accent_color": "#E8738A",
+  "toppings": [],
+  "message": "",
+  "customer": "",
+  "pickup_date": "",
+  "notes": "",
+  "render": {
+    "output": "C:/CakeRenders/cake.png",
+    "views": ["hero"],
+    "engine": "CYCLES",
+    "samples": 128,
+    "resolution": [1600, 1600],
+    "backdrop": "#EFE8E1",
+    "stand": "white",
+    "message_placement": "front",
+    "hide_other_objects": true,
+    "save_blend": ""
+  }
+}

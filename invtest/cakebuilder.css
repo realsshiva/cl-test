@@ -250,11 +250,6 @@
     color: var(--cb-rose);
 }
 
-.cb-ready {
-    font-size: 0.7rem;
-    font-weight: 600;
-}
-
 /* ---------- Chips (sizes, toppings) ---------- */
 .cb-chips {
     display: flex;
@@ -798,4 +793,262 @@
 /* Step headings get focus when a step opens (for screen readers); no focus ring needed there. */
 .cb-step-title:focus {
     outline: none;
+}
+
+/* ---------- Extra colors, styles and fonts ---------- */
+@property --cb-base2 { syntax: '<color>'; inherits: true; initial-value: #fff4dc; }
+@property --cb-trim { syntax: '<color>'; inherits: true; initial-value: #e8738a; }
+@property --cb-board { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+@property --cb-drip { syntax: '<color>'; inherits: true; initial-value: #5a3423; }
+
+.cb-cake {
+    transition: --cb-base 0.45s ease, --cb-base-light 0.45s ease, --cb-base-dark 0.45s ease,
+                --cb-accent 0.45s ease, --cb-accent-dark 0.45s ease, --cb-ink 0.45s ease,
+                --cb-base2 0.45s ease, --cb-trim 0.45s ease, --cb-board 0.45s ease, --cb-drip 0.45s ease;
+}
+
+/* The "Color to change" row now holds up to seven colors, so it wraps. */
+.cb-target {
+    display: flex;
+    flex-wrap: wrap;
+    border-radius: 1.25rem;
+}
+
+.cb-target-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+/* "Automatic" swatch: follows the rest of the design instead of a fixed color. */
+.cb-swatch-auto {
+    background: repeating-linear-gradient(135deg, var(--bs-tertiary-bg) 0 6px, var(--bs-secondary-bg) 6px 12px);
+    display: grid;
+    place-items: center;
+}
+
+.cb-swatch-auto::before {
+    content: "\F130"; /* bi-arrow-repeat */
+    font-family: "bootstrap-icons";
+    color: var(--bs-secondary-color);
+    font-size: 1.05rem;
+}
+
+.btn-check:checked + .cb-swatch-auto::before {
+    content: "";
+}
+
+/* Little pictures on the cake color style chips, in the cake's own colors. */
+.cb-style-art {
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: none;
+    border-radius: 0.35rem;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+    background: var(--cb-base);
+}
+
+.cb-style-ombre {
+    background: linear-gradient(180deg, var(--cb-base2), var(--cb-base));
+}
+
+.cb-style-tiers {
+    background: linear-gradient(180deg, var(--cb-base2) 0 45%, var(--cb-base) 45%);
+}
+
+.cb-chip-font {
+    font-size: 1.05rem;
+    font-weight: 400;
+}
+
+.cb-inline-color {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+}
+
+/* ---------- Moving things on the cake ---------- */
+.cb-cake .cb-piece,
+.cb-cake .cb-msg {
+    cursor: grab;
+    touch-action: none;
+}
+
+/* Only the grab area (pieces) and the letters (message) react to the pointer, not the see-through
+   parts of the images around them. */
+.cb-cake image {
+    pointer-events: none;
+}
+
+.cb-cake .cb-grab {
+    fill: transparent;
+    pointer-events: all;
+}
+
+.cb-cake .cb-msg text {
+    pointer-events: all;
+    user-select: none;
+}
+
+.cb-cake .cb-piece:focus {
+    outline: none;
+}
+
+.cb-cake .cb-piece:focus-visible .cb-grab {
+    stroke: var(--cb-rose);
+    stroke-width: 2;
+    stroke-dasharray: 4 3;
+}
+
+.cb-cake .cb-piece.is-dragging,
+.cb-stage.is-dragging .cb-cake .cb-msg {
+    cursor: grabbing;
+}
+
+.cb-cake .cb-piece.is-dragging {
+    filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.3));
+}
+
+.cb-cake .cb-sel-ring {
+    fill: rgba(224, 96, 126, 0.16);
+    stroke: var(--cb-rose);
+    stroke-width: 1.6;
+    stroke-dasharray: 5 4;
+    animation: cb-ring 1.2s linear infinite;
+}
+
+@keyframes cb-ring {
+    to { stroke-dashoffset: -18; }
+}
+
+/* !important: the letters carry their own inline stroke (the halo that keeps them readable). */
+.cb-cake .cb-msg.is-selected text:last-of-type {
+    stroke: var(--cb-rose) !important;
+    stroke-width: 4px !important;
+}
+
+/* No color fade or pop-in while dragging, so things follow the pointer. */
+.cb-stage.is-dragging .cb-cake {
+    transition: none;
+}
+
+.cb-piece-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 1rem;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color-translucent);
+    box-shadow: 0 0.3rem 0.8rem rgba(0, 0, 0, 0.08);
+}
+
+.cb-piece-name {
+    font-weight: 700;
+    margin-right: 0.25rem;
+}
+
+.cb-drag-hint {
+    margin: 0.5rem 0 0;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+}
+
+.cb-history {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cb-cake .cb-sel-ring {
+        animation: none !important;
+    }
+}
+
+/* ---------- Zoom, photo on top, allergies ---------- */
+.cb-zoom {
+    position: absolute;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bs-body-bg) 82%, transparent);
+    box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.15);
+}
+
+.cb-zoom .btn {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: var(--bs-emphasis-color);
+}
+
+.cb-zoom .btn:hover:not(:disabled) {
+    background: var(--bs-tertiary-bg);
+}
+
+.cb-zoom .btn:disabled {
+    opacity: 0.35;
+}
+
+/* The bento box toggle: faded and struck through while the box is hidden. */
+.cb-zoom .btn[aria-pressed="false"] {
+    opacity: 0.55;
+    background: linear-gradient(to top right, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+/* Zoomed in: the cake itself can be dragged to look around. */
+.cb-stage.is-zoomed .cb-cake {
+    cursor: grab;
+    touch-action: none;
+}
+
+.cb-stage.is-panning .cb-cake {
+    cursor: grabbing;
+}
+
+.cb-cake .cb-photo image {
+    cursor: grab;
+    touch-action: none;
+}
+
+.cb-photo-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border-radius: 1rem;
+    border: 2px dashed var(--bs-border-color);
+}
+
+.cb-photo-card > div:first-child {
+    flex: 1 1 14rem;
+}
+
+.cb-chip-allergen {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.9rem;
+}
+
+.cb-chip-allergen i {
+    color: var(--bs-secondary-color);
+}
+
+.btn-check:checked + .cb-chip-allergen {
+    border-color: var(--bs-danger);
+    background: var(--bs-danger);
 }
