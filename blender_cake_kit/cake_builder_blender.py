@@ -67,6 +67,9 @@ DEFAULT_ORDER = {
     "layout": None,           # where things sit: {"items": [[topping, u, v, size], ...], "msg": [dx, dy, size]}
                               # (u, v) is a spot on the top of the cake, each -1..1: u = left to right, v = front to back
     "photo": None,            # picture printed on top: {"file": "C:/.../photo.jpg", "u": 0, "v": 0, "s": 1}
+    "side_designs": [],       # pattern on the sides, per tier (bottom first): none | stripes | dots | quilted |
+                              # swags | ruffles | zigzag. One entry is used for every tier.
+    "side_color": "",         # colour of the side designs ("" = trim_color, or accent_color)
     "render": {
         "output": "",                 # e.g. "C:/Users/me/Desktop/cake.png" ("" = build only, no render)
         "views": ["hero"],            # hero | three_quarter | top | side   (each gets its own file)
@@ -301,6 +304,8 @@ def build_materials(order, pal, finish):
     M = {
         "frosting": material("Frosting", pal["base"], **frosting),
         "piping": material("Piping", trim, rough=0.5, sss=0.2),
+        "side": material("SideDeco", order.get("side_color") if is_hex(order.get("side_color")) else trim,
+                         rough=0.42, sss=0.15, sheen=0.2),
         "piping_dark": material("PipingDark", mix(trim, "#000000", 0.2), rough=0.45, sss=0.15),
         "ribbon": material("Ribbon", trim, rough=0.32, sheen=0.6, coat=0.2),
         "ink": material("MessageInk", ink, rough=0.35, coat=0.3),
@@ -851,6 +856,47 @@ class Tier:
             return Vector(((self.r + offset) * c, (self.r + offset) * s, z)), Vector((c, s, 0))
         return Vector((xfrac * self.w / 2, -self.d / 2 - offset, z)), Vector((0, -1, 0))
 
+    def perimeter(self):
+        return 2 * math.pi * self.r if not self.box else 2 * (self.w + self.d)
+
+    def around(self, u, z, offset=0.0):
+        """Point on the side at u (0..1 of the way round, starting at the front middle and going right),
+        `offset` metres outside the surface. Returns (point, tangent, outward normal)."""
+        u %= 1.0
+        if not self.box:
+            a = -math.pi / 2 + 2 * math.pi * u
+            c, s = math.cos(a), math.sin(a)
+            r = self.r + offset
+            return Vector((r * c, r * s, z)), Vector((-s, c, 0)), Vector((c, s, 0))
+        hw, hd = self.w / 2, self.d / 2
+        dist = u * self.perimeter()
+        for start, step, length, n in (((0, -hd), (1, 0), hw, (0, -1)), ((hw, -hd), (0, 1), self.d, (1, 0)),
+                                       ((hw, hd), (-1, 0), self.w, (0, 1)), ((-hw, hd), (0, -1), self.d, (-1, 0)),
+                                       ((-hw, -hd), (1, 0), hw, (0, -1))):
+            if dist <= length or n == (0, -1) and start[0] < 0:
+                x = start[0] + step[0] * dist + n[0] * offset
+                y = start[1] + step[1] * dist + n[1] * offset
+                return Vector((x, y, z)), Vector((step[0], step[1], 0)), Vector((n[0], n[1], 0))
+            dist -= length
+
+    def side_spots(self, spacing, z, offset=0.0, between=False):
+        """Evenly spaced points around the side. Boxes keep them off the corners. `between` gives the
+        points halfway between the usual ones (for staggered rows)."""
+        if not self.box:
+            n = max(6, round(self.perimeter() / spacing))
+            return [self.around((i + (0.5 if between else 0.0)) / n, z, offset) for i in range(n)]
+        pts = []
+        hw, hd = self.w / 2 + offset, self.d / 2 + offset
+        for a, b, n in ((Vector((-hw, -hd, z)), Vector((hw, -hd, z)), Vector((0, -1, 0))),
+                        (Vector((hw, -hd, z)), Vector((hw, hd, z)), Vector((1, 0, 0))),
+                        (Vector((hw, hd, z)), Vector((-hw, hd, z)), Vector((0, 1, 0))),
+                        (Vector((-hw, hd, z)), Vector((-hw, -hd, z)), Vector((-1, 0, 0)))):
+            count = max(1, round((b - a).length / spacing))
+            tan = (b - a).normalized()
+            spots = [(i + 1) / count for i in range(count - 1)] if between else [(i + 0.5) / count for i in range(count)]
+            pts += [(a.lerp(b, f), tan, n) for f in spots]
+        return pts
+
     def top_random(self, rnd, frac=0.85):
         z = self.zt + self.top_lift
         if not self.box:
@@ -961,6 +1007,10 @@ def normalize_order(order):
         tops = tops[:MAX_TOPPINGS]
     o["toppings"] = tops
     o["message"] = (o.get("message") or "")[:MESSAGE_MAX]
+    sides = o.get("side_designs") or []
+    if isinstance(sides, str):
+        sides = [x.strip() for x in sides.split(",")]
+    o["side_designs"] = [x if x in SIDE_DESIGNS else "none" for x in sides][:2]
     return o
 
 
@@ -1214,6 +1264,133 @@ def build_side_toppings(order, tiers, trims, coll, M, rnd, has_drip):
         for xf, dz, roll in ((0.62, 0.15, -0.6), (0.43, -0.12, 0.9)):
             p, n = top.side_front(xf, z + dz * IN * s, 0.05 * IN)
             b.add(t_leaf(), face_frame(p, n, roll=roll, scale=0.45 * IN * s), M["leaf"])
+        b.finish(coll)
+
+
+# Side designs: a pattern around the side of a tier, in the side design colour. Same keys as
+# cakeSideDesigns() in cake_options.php. "none" = plain sides.
+SIDE_DESIGNS = ["stripes", "dots", "quilted", "swags", "ruffles", "zigzag"]
+
+
+def t_grid(rings, closed=True):
+    """A surface through rings of points (each ring the same length), e.g. a ruffle all round a tier."""
+    bm = bmesh.new()
+    vs = [[bm.verts.new(p) for p in ring] for ring in rings]
+    n = len(rings[0])
+    last = n if closed else n - 1
+    for a, b in zip(vs, vs[1:]):
+        for k in range(last):
+            bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    t = T_from_bm(bm)
+    bm.free()
+    return t
+
+
+def build_side_designs(order, tiers, coll, M):
+    """The side design of each tier (order["side_designs"], bottom tier first). Each tier's pattern is its
+    own object, Pattern1 (bottom) and Pattern2 (upper), so the web builder can render them separately."""
+    designs = order.get("side_designs") or []
+    lens = t_sphere(16, 10)
+    for idx, t in enumerate(tiers):
+        key = designs[min(idx, len(designs) - 1)] if designs else "none"
+        if key not in SIDE_DESIGNS:
+            continue
+        s = t.scale
+        # The band the pattern fills: clear of the bottom border/ribbon and a little under the top edge.
+        lo = t.zb + max(0.42 * IN * s, 0.12 * t.h)
+        hi = t.zt - max(0.2 * IN * s, 0.08 * t.h)
+        span = hi - lo
+        b = Builder("Pattern%d" % (idx + 1))
+        mat = M["side"]
+        if key == "stripes":
+            half, thick = 0.13 * IN * s, 0.035 * IN
+            for p, tan, n in t.side_spots(0.75 * IN * s, 0.0, thick * 0.4):
+                path = [Vector((p.x, p.y, lo + span * k / 7)) for k in range(8)]
+                b.add(t_tube(path, half, thick, segs=12, side_hint=tan,
+                             radius_fn=lambda f: 1.0 if 0.06 < f < 0.94 else 0.75), Matrix(), mat)
+        elif key == "dots":
+            rows = max(2, round(span / (0.62 * IN * s)) + 1)
+            r = 0.13 * IN * s
+            for j in range(rows):
+                z = lo + r + (span - 2 * r) * j / (rows - 1)
+                for p, tan, n in t.side_spots(0.72 * IN * s, z, 0.0, between=j % 2 == 1):
+                    b.add(lens, face_frame(p, n) @ S(r, 0.38 * r, r), mat)
+        elif key == "quilted":
+            width = 0.85 * IN * s
+            n = max(8, round(t.perimeter() / width))
+            height = min(span, width * 1.25)
+            steps = max(6, round(span / (0.08 * IN)))
+            rad = 0.028 * IN * s
+            for k in range(n):
+                for sign in (1, -1):
+                    path = []
+                    for i in range(steps + 1):
+                        z = lo + span * i / steps
+                        path.append(t.around((k + sign * (z - lo) / height) / n, z, rad * 0.6)[0])
+                    b.add(t_tube(path, rad, segs=8), Matrix(), mat)
+            # A little bead where the lines cross.
+            j = 0
+            while lo + j * height / 2 <= hi + 1e-6:
+                z = lo + j * height / 2
+                for k in range(n):
+                    p, tan, nrm = t.around((k + j / 2) / n, z, 0.0)
+                    b.add(lens, face_frame(p, nrm) @ S(0.07 * IN * s, 0.05 * IN * s, 0.07 * IN * s), mat)
+                j += 1
+        elif key == "swags":
+            n = max(6, round(t.perimeter() / (1.6 * IN * s)))
+            depth = min(0.75 * IN * s, span * 0.55)
+            top = hi
+            for k in range(n):
+                ua, ub = (k + 0.5) / n, (k + 1.5) / n
+                for sag, rad in ((1.0, 0.06 * IN * s), (0.55, 0.04 * IN * s)):
+                    path = []
+                    for i in range(17):
+                        f = i / 16
+                        z = top - depth * sag * (1 - (2 * f - 1) ** 2)
+                        path.append(t.around(ua + (ub - ua) * f, z, rad * 0.7)[0])
+                    b.add(t_tube(path, rad, segs=10, radius_fn=lambda f: 0.65 + 0.55 * math.sin(math.pi * f)),
+                          Matrix(), mat)
+                # Where two swags meet: a bead, and a drop hanging under it.
+                p, tan, nrm = t.around(ua, top + 0.03 * IN, 0.02 * IN)
+                b.add(lens, face_frame(p, nrm) @ S(0.11 * IN * s, 0.08 * IN * s, 0.11 * IN * s), mat)
+                p, tan, nrm = t.around(ua, top - 0.24 * IN * s, 0.01 * IN)
+                b.add(lens, face_frame(p, nrm) @ S(0.06 * IN * s, 0.06 * IN * s, 0.12 * IN * s), mat)
+        elif key == "ruffles":
+            # Rows of gathered frills, each hanging from its own line and flaring out at the bottom
+            # edge, so every row throws a shadow on the one below.
+            rows = max(2, round(span / (0.55 * IN * s)))
+            band = span / rows * 1.08
+            per = t.perimeter()
+            samples = max(160, round(per / (0.04 * IN)))
+            waves = max(12, round(per / (0.42 * IN * s)))
+            amp = 0.11 * IN * s
+            for j in range(rows):
+                z_top = hi - span * j / rows
+                rings = []
+                for level, flare, lift in ((0.0, 0.0, 0.0), (0.3, 0.3, 0.0), (0.65, 0.75, 0.0),
+                                           (0.92, 1.0, 0.0), (1.0, 1.05, 0.04)):
+                    ring = []
+                    for i in range(samples):
+                        u = i / samples
+                        wave = 0.5 + 0.5 * math.sin(2 * math.pi * waves * u + j * 1.7)
+                        off = 0.012 * IN + (0.05 * IN * s + amp * wave) * flare
+                        ring.append(t.around(u, z_top - band * level + lift * IN * s, off)[0])
+                    rings.append(ring)
+                b.add(t_grid(rings), Matrix(), mat)
+        elif key == "zigzag":
+            rows = max(1, round(span / (0.75 * IN * s)))
+            n = max(10, round(t.perimeter() / (0.6 * IN * s)))
+            rad = 0.045 * IN * s
+            for j in range(rows):
+                zc = lo + span * (j + 0.5) / rows
+                amp = min(0.22 * IN * s, span / rows * 0.32)
+                path = []
+                for i in range(2 * n):
+                    for f in (0.0, 0.5):   # an extra point midway so the line hugs a round side
+                        z = zc + amp * ((1 - 2 * f) if i % 2 == 0 else (2 * f - 1))
+                        path.append(t.around((i + f) / (2 * n), z, rad * 0.6)[0])
+                b.add(t_tube(path, rad, segs=8, closed=True), Matrix(), mat)
         b.finish(coll)
 
 
@@ -1591,6 +1768,7 @@ def build_cake(order=None):
                          o.get("piping") or "rosette",
                          finish_top if finish_top != finish or o.get("finish_top") else None,
                          "all" in (o.get("finish_top") or "").lower())
+    build_side_designs(o, tiers, coll, M)
     build_side_toppings(o, tiers, trims, coll, M, rnd, has_drip)
     if o.get("photo"):
         build_photo(o["photo"], top, coll)

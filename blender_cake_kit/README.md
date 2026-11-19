@@ -48,6 +48,7 @@ customer's colours are rendered white, and the page tints them live. The message
 |---|---|
 | `pieces/<view>/*.webp` | **Single topping pieces** (one strawberry, cherry, macaron, rose, candle) per camera angle (`round`, `box`, `bento`). The page places them wherever the customer drags them. Made by a full run, or on their own with `--pieces only` |
 | `drip-tint.webp` | The drip in white, so the page can give it any colour. `drip.webp` is still the real chocolate one |
+| `side-<design>-t1.webp`, `side-<design>-t2.webp` | **Side designs** (stripes, dots, quilted, swags, ruffles, zigzag) in white, one image per tier (`t1` = bottom). The page tints them with the side design colour. Only these: `--only "side-*"` |
 | `body-<surface>-top.webp` | The upper tier on its own (two-tier shapes), for two-tone tiers |
 | `finish-buttercream-shell*.webp`, `finish-buttercream-bead*.webp` | The other buttercream top borders (`PIPING_STYLES` in `render_builder_assets.py`) |
 
@@ -102,7 +103,7 @@ Options: `--render <png>`, `--views hero,three_quarter,top,side`, `--samples N`,
 In the production queue, open a custom cake and click **Blender order file**. It downloads
 `cake-order-<number>.json` with the whole design: colours (second colour, trim, drip, stand, message),
 piping style, upper tier finish, lettering, where each topping and the message were placed, and the
-photo for the top. Render it like any other order:
+photo for the top, and the side design of each tier. Render it like any other order:
 
 ```
 "D:\SteamLibrary\steamapps\common\Blender\blender.exe" -b -P cake_builder_blender.py -- cake-order-17.json --render C:\CakeRenders\cake-17.png --views hero,top
@@ -116,7 +117,8 @@ without them the script font is used.
 
 Same names as the Cake Builder. See `CAKE_DESIGN_SPEC.md` §1 for the details. The optional design
 extras (`color_style`, `base_color2`, `trim_color`, `drip_color`, `stand_color`, `message_color`, `piping`,
-`finish_top`, `font`, `layout`, `photo`) are described next to `DEFAULT_ORDER` in `cake_builder_blender.py`.
+`finish_top`, `side_designs`, `side_color`, `font`, `layout`, `photo`) are described next to `DEFAULT_ORDER`
+in `cake_builder_blender.py`.
 
 ```json
 {

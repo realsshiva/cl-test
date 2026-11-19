@@ -90,6 +90,22 @@ function cakePipingStyles(): array
     return ['rosette' => 'Rosettes', 'shell' => 'Shells', 'bead' => 'Beads'];
 }
 
+// Patterns around the sides of the cake, chosen per tier: key => [label, short description].
+// Drawn in the side design color (default: the piping & trim color). Same keys as SIDE_DESIGNS in
+// blender_cake_kit/cake_builder_blender.py, which models them.
+function cakeSideDesigns(): array
+{
+    return [
+        'none'    => ['Plain', 'Smooth sides'],
+        'stripes' => ['Stripes', 'Up-and-down stripes'],
+        'dots'    => ['Polka dots', 'Rows of little dots'],
+        'quilted' => ['Quilted', 'Diamond lattice with beads'],
+        'swags'   => ['Swags', 'Draped garlands near the top'],
+        'ruffles' => ['Ruffles', 'Rows of soft frills'],
+        'zigzag'  => ['Zigzag', 'Piped zigzag lines'],
+    ];
+}
+
 // Message fonts: key => [label, CSS font-family]. The web fonts are loaded from Google Fonts by the pages.
 function cakeFonts(): array
 {
@@ -131,6 +147,7 @@ function cakeDefaultDesign(): array
 {
     return [
         'style' => 'solid', 'base2' => '', 'trim' => 'auto', 'drip' => 'auto', 'board' => 'auto', 'ink' => 'auto',
+        'sides' => [], 'side' => 'auto',
         'piping' => 'rosette', 'font' => 'script', 'msg' => [0, 0, 1], 'items' => null,
         'finish2' => '', 'photo' => null, 'allergens' => [],
     ];
@@ -138,7 +155,8 @@ function cakeDefaultDesign(): array
 
 // Checks the design extras sent by the builder and returns a clean copy. Anything unexpected falls back
 // to its default, so the saved design can be trusted by the production queue.
-//   $in: style, base2, trim, drip, board, ink, piping, font, finish2, allergens (list) and
+//   $in: style, base2, trim, drip, board, ink, side (side design color), sides (side design per tier,
+//        bottom tier first), piping, font, finish2, allergens (list) and
 //        layout (JSON: {items: [[key,u,v,size]], msg: [dx,dy,size], photo: [id,u,v,size]})
 //   $toppings: the topping keys chosen for this cake; $tiers: how many tiers the cake has;
 //   $finishes: the finish names this cake's size comes in (for the upper tier's finish).
@@ -158,7 +176,15 @@ function cakeCleanDesign(array $in, array $toppings, int $tiers, array $finishes
         $design['style'] = $style;
         $design['base2'] = $base2;
     }
-    foreach (['trim', 'drip', 'board', 'ink'] as $key) $design[$key] = $color($key);
+    foreach (['trim', 'drip', 'board', 'ink', 'side'] as $key) $design[$key] = $color($key);
+    // One side design per tier; a cake with plain sides all round stores none.
+    $sides = [];
+    for ($i = 0; $i < max(1, min(2, $tiers)); $i++) {
+        $key = is_string($in['sides'][$i] ?? null) ? $in['sides'][$i] : 'none';
+        $sides[] = isset(cakeSideDesigns()[$key]) ? $key : 'none';
+    }
+    $design['sides'] = array_diff($sides, ['none']) ? $sides : [];
+    if (!$design['sides']) $design['side'] = 'auto';
     if (isset(cakePipingStyles()[$text('piping')])) $design['piping'] = $text('piping');
     if (isset(cakeFonts()[$text('font')])) $design['font'] = $text('font');
 
@@ -200,6 +226,17 @@ function cakeDecodeDesign(?string $json): array
 {
     $saved = $json ? json_decode($json, true) : null;
     return is_array($saved) ? array_merge(cakeDefaultDesign(), $saved) : cakeDefaultDesign();
+}
+
+// The side designs of a saved cake as text: "Stripes", or "Bottom tier: Stripes · Top tier: Plain".
+// Returns '' when every side is plain.
+function cakeSidesText(array $sides): string
+{
+    $names = array_map(fn($key) => cakeSideDesigns()[$key][0] ?? 'Plain', $sides);
+    if (!array_diff($sides, ['none'])) return '';
+    if (count($names) < 2) return $names[0];
+    if ($names[0] === $names[1]) return $names[0] . ' (both tiers)';
+    return 'Bottom tier: ' . $names[0] . ' · Top tier: ' . $names[1];
 }
 
 // The pre-rendered Blender image layers (made by blender_cake_kit/render_builder_assets.py),

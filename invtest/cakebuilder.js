@@ -13,9 +13,10 @@
     CD.init(data.renders);
     const { hexToRgb, mix, SPRINKLES } = CD;
     const recipes = new Map(data.recipes.map((r) => [r.id, r]));
-    // Every color the customer can set: base, base2, accent, trim, drip, board, ink.
+    // Every color the customer can set: base, base2, accent, trim, side, drip, board, ink.
     const GROUPS = Object.keys(data.colorGroups);
-    const COLOR_STEP = 3;
+    const SIDES_STEP = 3;
+    const COLOR_STEP = 4;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -56,6 +57,7 @@
         'Pick a shape to start baking!',
         'Now choose how big it should be.',
         'Pick a finish for the outside.',
+        'Dress up the sides.',
         'Time for some color!',
         'Add a few toppings, or keep it simple.',
         'Say something sweet.',
@@ -109,6 +111,8 @@
             tierCount,
             piping: checkedValue('piping') || 'rosette',
             font: checkedValue('msg-font') || 'script',
+            // The side design of each tier, bottom tier first ('none' = plain sides).
+            sides: Array.from({ length: tierCount }, (_, i) => checkedValue(`side-t${i + 1}`) || 'none'),
             // A different finish for the upper tier (two-tier cakes), by name; '' = same as the rest.
             finish2: tierCount > 1 && finish && size.finishes.some((f) => f.name === checkedValue('finish2') && f.id !== finish.id)
                 ? checkedValue('finish2') : '',
@@ -132,6 +136,7 @@
             accent: pick('accent') || DEFAULT_ACCENT,
             base2,
             trim: pick('trim'),
+            side: pick('side'),
             board: pick('board'),
             drip: pick('drip'),
             ink: pick('ink'),
@@ -148,6 +153,7 @@
             case 'base': return DEFAULT_BASE;
             case 'base2': return s.colors.base || DEFAULT_BASE;
             case 'trim': return s.colors.accent || DEFAULT_ACCENT;
+            case 'side': return isHex(s.colors.trim) ? s.colors.trim : s.colors.accent || DEFAULT_ACCENT;
             case 'drip': return DEFAULT_DRIP;
             case 'board': return '#FFFFFF';
             case 'ink': return lastInk.toUpperCase();
@@ -160,17 +166,20 @@
         if (group === 'base2') return s.style !== 'solid';
         if (group === 'drip') return s.toppings.includes('chocolate_drip');
         if (group === 'board') return !(s.recipe && s.recipe.shape === 'bento');
+        if (group === 'side') return hasSides(s);
         return true;   // the message color can be chosen before the message is written
     }
+
+    const hasSides = (s) => s.sides.some((key) => key !== 'none');
 
     function stepDone(step, s) {
         switch (step) {
             case 0: return !!s.recipe;
             case 1: return !!s.size;
             case 2: return !!s.finish;
-            case 3: return !!(s.base && s.accent);
-            case 6: return Number.isInteger(s.qty) && s.qty >= 1 && s.qty <= Number(els.qty.max);
-            default: return true;
+            case COLOR_STEP: return !!(s.base && s.accent);
+            case LAST_STEP: return Number.isInteger(s.qty) && s.qty >= 1 && s.qty <= Number(els.qty.max);
+            default: return true;   // the sides, toppings and message are optional
         }
     }
 
@@ -342,6 +351,7 @@
             style: s.style,
             piping: s.piping,
             finish2: s.finish2,
+            sides: s.sides,
             photo: layout.photo ? { src: `${data.photoUrl}${layout.photo.id}.jpg`, u: layout.photo.u, v: layout.photo.v, s: layout.photo.s } : null,
             dripTint: isHex(s.colors.drip),
             font: s.font,
@@ -475,6 +485,51 @@
         return `Custom ${shade}${hue}`;
     }
 
+    // "Stripes", "Stripes (both tiers)" or "Bottom tier: Stripes · Top tier: Plain".
+    function sidesText(s) {
+        if (!hasSides(s)) return 'Plain';
+        const names = s.sides.map((key) => data.sideDesigns[key] || 'Plain');
+        if (names.length < 2) return names[0];
+        if (names[0] === names[1]) return `${names[0]} (both tiers)`;
+        return `Bottom tier: ${names[0]} · Top tier: ${names[1]}`;
+    }
+
+    // ---------- Sides step ----------
+    // Each design's card shows a small cake of the chosen shape and finish with that pattern. They are drawn
+    // only while the step is open, and again when the shape or finish changes (colors follow on their own).
+    const sideThumbs = $$('.cb-side-thumb');
+    let sideThumbKey = '';
+    function syncSides(s) {
+        const twoTiers = s.tierCount > 1;
+        $('#cb-side-t2').hidden = !twoTiers;
+        $('#cb-side-t1-label').textContent = twoTiers ? 'Bottom tier' : 'All around the cake';
+        $$('[data-side-copy]').forEach((button) => { button.hidden = !twoTiers; });
+        $('#cb-sides-hint').textContent = twoTiers
+            ? 'Pick a pattern for each tier: the same on both, or a different one on top.'
+            : 'Pick a pattern for the sides of the cake, or keep them plain.';
+        $('#cb-side-color').hidden = !hasSides(s);
+        $('#cb-side-dot').style.background = shownColor('side', s);
+        $('#cb-side-name').textContent = isHex(s.colors.side)
+            ? `${choiceLabel('side', s)} side design` : 'Side design in the piping & trim color';
+        if (current !== SIDES_STEP) return;
+        const shape = s.recipe ? s.recipe.shape : 'round';
+        const finish = s.finish ? s.finish.name : 'Fondant';
+        const key = `${shape}|${finish}`;
+        if (key === sideThumbKey) return;
+        sideThumbKey = key;
+        sideThumbs.forEach((svg) => CD.drawCake(svg, {
+            shape, tiers: 1, size: '', finish, toppings: [], hideBox: true, sides: [svg.dataset.side],
+        }));
+    }
+
+    // "Use on both tiers": copies one tier's design to the other.
+    $$('[data-side-copy]').forEach((button) => button.addEventListener('click', () => {
+        const from = button.dataset.sideCopy;
+        const input = findInput(`side-t${from === '1' ? 2 : 1}`, checkedValue(`side-t${from}`));
+        if (input) input.checked = true;
+        update();
+    }));
+
     function renderSummary(s) {
         const colors = document.createElement('span');
         const addColor = (hex, text) => colors.append(document.createTextNode(colors.childNodes.length ? '  ' : ''), colorDot(hex), text);
@@ -482,7 +537,7 @@
         if (s.style !== 'solid') addColor(s.colors.base2, `${colorLabel(s.colors.base2, 'base2')} (${s.style === 'ombre' ? 'ombre, fading in from the top' : 'upper tier'})`);
         if (s.accent) addColor(s.accent, `${colorLabel(s.accent, 'accent')} accents`);
         // Only the extra colors that were actually changed.
-        const extras = [['trim', 'piping & trim'], ['drip', 'drip'], ['board', 'stand'], ['ink', 'message']];
+        const extras = [['trim', 'piping & trim'], ['side', 'side design'], ['drip', 'drip'], ['board', 'stand'], ['ink', 'message']];
         extras.filter(([g]) => groupUsed(g, s) && isHex(s.colors[g]) && (g !== 'ink' || s.message))
             .forEach(([g, what]) => addColor(s.colors[g], `${colorLabel(s.colors[g], g)} ${what}`));
 
@@ -497,9 +552,10 @@
             ['Cake', s.recipe && s.recipe.name, 0],
             ['Size', s.size && s.size.label, 1],
             ['Finish', finishText, 2],
-            ['Colors', colors, 3],
-            ['Toppings', toppingList || 'None', 4],
-            ['Message', s.message ? `“${s.message}” · ${data.fonts[s.font]}` : 'No message', 5],
+            ['Sides', sidesText(s), SIDES_STEP],
+            ['Colors', colors, COLOR_STEP],
+            ['Toppings', toppingList || 'None', COLOR_STEP + 1],
+            ['Message', s.message ? `“${s.message}” · ${data.fonts[s.font]}` : 'No message', COLOR_STEP + 2],
         ];
         els.summary.replaceChildren(...rows.map(([label, value, step]) => {
             const wrap = document.createElement('div');
@@ -550,8 +606,8 @@
         els.next.hidden = current === LAST_STEP;
         els.submit.hidden = current !== LAST_STEP;
         els.next.disabled = !done;
-        els.next.classList.toggle('is-ready', done && current <= 3);
-        if (done && current <= 3 && !completed.has(current)) {
+        els.next.classList.toggle('is-ready', done && current <= COLOR_STEP);
+        if (done && current <= COLOR_STEP && !completed.has(current)) {
             completed.add(current);
             sparkle();
         } else if (!done) {
@@ -596,6 +652,7 @@
             $(`#cb-target-${group}-dot`).style.background = shownColor(group, s);
         });
         if (!groupUsed(wheel.target, s)) setWheelTarget('base');
+        syncSides(s);
         $('#cb-drip-color').hidden = !s.toppings.includes('chocolate_drip');
         $('#cb-drip-dot').style.background = shownColor('drip', s);
         $('#cb-drip-name').textContent = `${choiceLabel('drip', s)} drip`;
@@ -1160,8 +1217,8 @@
     // ---------- Whole designs: undo, redo, start over, surprise ----------
     const blankDesign = () => ({
         recipe: '', size: '', variant: '',
-        colors: { base: DEFAULT_BASE, base2: '', accent: DEFAULT_ACCENT, trim: 'auto', drip: 'auto', board: 'auto', ink: 'auto' },
-        style: 'solid', piping: 'rosette', font: 'script', finish2: '', toppings: [], message: '', layout: blankLayout(),
+        colors: { base: DEFAULT_BASE, base2: '', accent: DEFAULT_ACCENT, trim: 'auto', side: 'auto', drip: 'auto', board: 'auto', ink: 'auto' },
+        style: 'solid', piping: 'rosette', font: 'script', finish2: '', sides: ['none', 'none'], toppings: [], message: '', layout: blankLayout(),
     });
 
     // Everything that makes up the cake, as plain data.
@@ -1175,6 +1232,7 @@
             piping: checkedValue('piping') || 'rosette',
             font: checkedValue('msg-font') || 'script',
             finish2: checkedValue('finish2'),
+            sides: [checkedValue('side-t1') || 'none', checkedValue('side-t2') || 'none'],
             toppings: $$('.cb-topping:checked', form).map((i) => i.value),
             message: els.message.value,
             layout: JSON.parse(JSON.stringify(layout)),
@@ -1205,6 +1263,9 @@
         check('cake-style', d.style, 'solid');
         check('piping', d.piping, 'rosette');
         check('msg-font', d.font, 'script');
+        const sides = Array.isArray(d.sides) ? d.sides : [];
+        check('side-t1', sides[0] || 'none', 'none');
+        check('side-t2', sides[1] || sides[0] || 'none', 'none');
         finish2Options.dataset.signature = '?';   // rebuild the upper tier choices for this cake
         syncFinish2(readState());
         check('finish2', d.finish2 || '', '');
@@ -1275,6 +1336,8 @@
         const base = pick(shades('base'));
         const twoTiers = CD.tierCount(recipe.tiers, size.label) > 1;
         const style = twoTiers && chance(0.5) ? 'tiers' : chance(0.3) ? 'ombre' : 'solid';
+        const patterns = Object.keys(data.sideDesigns).filter((key) => key !== 'none');
+        const side = chance(0.6) ? pick(patterns) : 'none';
         applyDesign({
             recipe: recipe.id,
             size: size.label,
@@ -1284,6 +1347,7 @@
                 base2: style === 'solid' ? '' : pick(shades('base2').filter((c) => c !== base)),
                 accent: pick(shades('accent').filter((c) => c !== base)),
                 trim: 'auto',
+                side: side !== 'none' && chance(0.3) ? pick(shades('side')) : 'auto',
                 drip: chance(0.3) ? pick(shades('drip')) : 'auto',
                 board: chance(0.25) ? pick(shades('board')) : 'auto',
                 ink: 'auto',
@@ -1292,6 +1356,7 @@
             piping: pick(Object.keys(data.pipingStyles)),
             font: pick(Object.keys(data.fonts)),
             finish2: twoTiers && chance(0.4) ? pick(size.finishes).name : '',
+            sides: [side, twoTiers && chance(0.4) ? pick(['none', ...patterns]) : side],
             toppings: Object.keys(data.toppings).sort(() => Math.random() - 0.5).slice(0, 1 + Math.floor(Math.random() * 3)),
             message: chance(0.7) ? pick(MESSAGE_IDEAS) : '',
         });
@@ -1311,6 +1376,7 @@
         visited.clear();
         visited.add(0);
         completed.clear();
+        completed.add(SIDES_STEP);
         current = -1;
         goTo(0, { focus: false });
     });
@@ -1324,11 +1390,11 @@
             return;
         }
         const s = readState();
-        const missing = [0, 1, 2, 3, 6].find((i) => !stepDone(i, s));
+        const missing = [0, 1, 2, COLOR_STEP, LAST_STEP].find((i) => !stepDone(i, s));
         if (missing !== undefined) {
             shake();
             goTo(missing);
-            if (missing === 6) els.qty.reportValidity();
+            if (missing === LAST_STEP) els.qty.reportValidity();
             return;
         }
         submitting = true;
@@ -1344,8 +1410,9 @@
     });
 
     // ---------- Start ----------
-    // Shape cards show a small version of each cake.
-    $$('.cb-thumb').forEach((thumb) => {
+    // Shape cards show a small version of each cake. (The side design cards are drawn by syncSides, in the
+    // cake's own colors.)
+    $$('.cb-shape .cb-thumb').forEach((thumb) => {
         const name = (thumb.parentElement.querySelector('.cb-option-name')?.textContent || '').toLowerCase();
         let base = '#F9C6D0';
         let accent = '#E8738A';
@@ -1369,6 +1436,7 @@
                 base2: isHex(sent(initial.base2)) ? sent(initial.base2) : '',
                 accent: isHex(sent(initial.accent)) ? sent(initial.accent) : DEFAULT_ACCENT,
                 trim: orAuto(initial.trim),
+                side: orAuto(initial.side),
                 drip: orAuto(initial.drip),
                 board: orAuto(initial.board),
                 ink: orAuto(initial.ink),
@@ -1377,16 +1445,18 @@
             piping: initial.piping,
             font: initial.font,
             finish2: initial.finish2,
+            sides: initial.sides,
             toppings: initial.toppings || [],
             message: els.message.value,
             layout: parseLayout(initial.layout),
         });
         for (let i = 0; i <= LAST_STEP; i++) visited.add(i);
-        for (let i = 0; i <= 3; i++) completed.add(i);
+        for (let i = 0; i <= COLOR_STEP; i++) completed.add(i);
         goTo(LAST_STEP, { focus: false });
     } else {
         applyDesign(blankDesign());
-        completed.add(3);
+        completed.add(SIDES_STEP);   // optional steps that start out done: no sparkle just for opening them
+        completed.add(COLOR_STEP);
         goTo(0, { focus: false });
     }
     commitHistory();   // the starting point for Undo

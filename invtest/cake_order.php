@@ -62,6 +62,9 @@ $order = [
     'stand_color' => $color('board'),
     'message_color' => $color('ink'),
     'piping' => $design['piping'],
+    // Side design per tier, bottom tier first ([] = plain sides), and their color ('' = the trim color).
+    'side_designs' => $design['sides'],
+    'side_color' => $color('side'),
     'finish_top' => (string)$design['finish2'],
     'font' => $design['font'],
     // Cakes saved before toppings could be moved have no item list; the script then uses its usual spots.

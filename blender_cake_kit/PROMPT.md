@@ -75,6 +75,8 @@ finish:        Buttercream
 base_color:    #F9C6D0   (Blush Pink)
 accent_color:  #D4A63A   (Gold)
 toppings:      chocolate_drip, macarons, flowers, gold_leaf
+side_designs:  quilted, swags      (bottom tier, top tier)
+side_color:    #FFFFFF
 message:       Happy Birthday, Mia!
 customer:      Mia's mom
 pickup_date:   2026-11-20
@@ -110,6 +112,7 @@ output:        C:/CakeRenders/ana_congrats.png
 - **Shapes** (from the recipe name): round · square · rectangle · bento · mini · add "2-Tier" for two tiers
 - **Finishes:** Buttercream · Semi-fondant · Fondant · All Fondant · Icing 2D · Plain
 - **Toppings (max 4):** sprinkles · strawberries · cherries · macarons · flowers · pearls · chocolate_drip · gold_leaf · candles
+- **Side designs (one per tier, bottom first):** none · stripes · dots · quilted · swags · ruffles · zigzag, in `side_color` (default: the trim colour)
 - **Base colours:** #FFF4DC Vanilla Cream · #FFFFFF Classic White · #F9C6D0 Blush Pink · #FCD5B5 Peach · #FBE7A1 Butter Yellow · #C6EBD9 Mint · #C5E1F5 Sky Blue · #D9C8F0 Lavender · #B23A48 Red Velvet · #7B4B36 Chocolate (or any hex)
 - **Accent colours:** #E8738A Rose · #D4A63A Gold · #4A2C21 Dark Chocolate · #9B2C5C Berry · #2A9D8F Teal · #9D7BD8 Lilac · #F08A5D Coral · #FFFFFF Snow White (or any hex)
 - **Message:** up to 40 characters

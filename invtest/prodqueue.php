@@ -452,8 +452,9 @@ $messages = [
 						// Extra colors and details, only the ones the customer changed.
 						$hasDrip = in_array('chocolate_drip', array_keys($cakeToppings), true);
 						$extraColors = [];
-						foreach (['trim' => 'Piping & trim', 'drip' => 'Drip', 'board' => 'Stand', 'ink' => 'Message'] as $key => $label) {
-							if ($cakeDesign[$key] === 'auto' || ($key === 'drip' && !$hasDrip) || ($key === 'ink' && $selectedBatch['ccd-Message'] === '')) continue;
+						$sidesText = cakeSidesText($cakeDesign['sides']);
+						foreach (['trim' => 'Piping & trim', 'side' => 'Side design', 'drip' => 'Drip', 'board' => 'Stand', 'ink' => 'Message'] as $key => $label) {
+							if ($cakeDesign[$key] === 'auto' || ($key === 'drip' && !$hasDrip) || ($key === 'ink' && $selectedBatch['ccd-Message'] === '') || ($key === 'side' && $sidesText === '')) continue;
 							$extraColors[$label] = (string)$cakeDesign[$key];
 						}
 						$isButtercream = $cakePreview !== null && stripos($cakePreview['finish'], 'butter') !== false;
@@ -481,6 +482,10 @@ $messages = [
 						<?php if ($cakeDesign['finish2'] !== ''): ?>
 							<dt class="col-sm-3 text-body-secondary">Upper tier finish</dt>
 							<dd class="col-sm-9"><?php echo e($cakeDesign['finish2']); ?> <span class="text-body-secondary">(bottom tier: <?php echo e($cakePreview['finish'] ?? 'as queued'); ?>)</span></dd>
+						<?php endif; ?>
+						<?php if ($sidesText !== ''): ?>
+							<dt class="col-sm-3 text-body-secondary">Side design</dt>
+							<dd class="col-sm-9"><?php echo e($sidesText); ?></dd>
 						<?php endif; ?>
 						<?php $isButtercream = $isButtercream || stripos((string)$cakeDesign['finish2'], 'butter') !== false; ?>
 						<?php if ($isButtercream && $cakeDesign['piping'] !== 'rosette'): ?>
@@ -617,7 +622,7 @@ $messages = [
 		CakeDraw.init(cake.renders);
 		CakeDraw.applyColors(svg, {
 			base: cake.base, accent: cake.accent, base2,
-			trim: hex(design.trim), board: hex(design.board), drip: hex(design.drip), ink: hex(design.ink),
+			trim: hex(design.trim), side: hex(design.side), board: hex(design.board), drip: hex(design.drip), ink: hex(design.ink),
 			inkOn: design.style === 'tiers' ? base2 : design.style === 'ombre' ? CakeDraw.mix(cake.base, base2, 0.5).toUpperCase() : '',
 		});
 		const draw = () => CakeDraw.drawCake(svg, {
@@ -625,6 +630,7 @@ $messages = [
 			toppings: cake.toppings, message: cake.message,
 			style: base2 ? design.style : 'solid', piping: design.piping, dripTint: !!hex(design.drip), font: design.font,
 			finish2: design.finish2 || '',
+			sides: design.sides || [],
 			photo: cake.photoUrl && design.photo ? { src: cake.photoUrl, u: design.photo[1], v: design.photo[2], s: design.photo[3] } : null,
 			msg: { dx: design.msg[0], dy: design.msg[1], size: design.msg[2] },
 			// Cakes saved before toppings could be moved have no layout; they get the usual spots.

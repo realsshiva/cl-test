@@ -107,6 +107,8 @@ def layer_of(ob):
         return "drip"
     if name == "SideFlowers":
         return "flowers-side"
+    if name.startswith("Pattern"):   # side designs: Pattern1 = bottom tier, Pattern2 = the tier above
+        return "side-t1" if name.endswith("1") else "side-t2"
     if name.startswith("Top_"):
         return "top-" + name[4:]
     if name == "FlameLight":
@@ -515,6 +517,10 @@ def rig_builds(shape, tiers):
                 jobs.append(("drip", {"drip"}, "all", "catcher"))
                 jobs.append(("drip-tint", {"drip"}, "white", "catcher"))   # white, coloured by the page
             builds.append((name, ["chocolate_drip"] if drip else [], jobs))
+    # Side designs, one image per tier, rendered white so the page can tint them (side design colour).
+    for key in SIDE_DESIGNS:
+        jobs = [("side-%s-t%d" % (key, n), {"side-t%d" % n}, "all", "catcher") for n in range(1, min(tiers, 2) + 1)]
+        builds.append(("Fondant", [], jobs, {"side_designs": [key, key]}))
     for style in PIPING_STYLES:
         for drip in (False, True):
             builds.append(("Buttercream", ["chocolate_drip"] if drip else [],

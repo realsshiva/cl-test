@@ -36,8 +36,8 @@ window.CakeDraw = (() => {
 
     // Sets the cake's colors on an element as CSS variables (the drawing reads them).
     // colors: { base, accent } plus optional base2 (second cake color), trim (piping and ribbon),
-    // board (stand), drip, ink (message) and inkOn (the cake color behind the message).
-    // Left-out colors follow the others: trim = accent, base2 = base, board = white, ink = automatic.
+    // side (side designs), board (stand), drip, ink (message) and inkOn (the cake color behind the message).
+    // Left-out colors follow the others: trim = accent, side = trim, base2 = base, board = white, ink = automatic.
     function applyColors(el, colors) {
         const base = colors.base || DEFAULT_BASE;
         const accent = colors.accent || DEFAULT_ACCENT;
@@ -63,6 +63,8 @@ window.CakeDraw = (() => {
         set('--cb-accent-dark', accentDark);
         set('--cb-trim', trim);
         set('--cb-trim-dark', mix(trim, '#000000', 0.2));
+        set('--cb-side', colors.side || trim);
+        set('--cb-side-dark', mix(colors.side || trim, '#000000', 0.22));
         set('--cb-board', colors.board || '#FFFFFF');
         set('--cb-drip', colors.drip || DEFAULT_DRIP);
         set('--cb-ink', ink);
@@ -470,6 +472,136 @@ window.CakeDraw = (() => {
         return { under, over, trim };
     }
 
+    // ----- Side designs (the drawn cake; the Blender images have their own) -----
+    // Maps a spot on the visible side of a tier to the drawing: a = distance along the side from the
+    // left edge (0..A), f = 0 at the top of the side to 1 at the bottom. k = how squeezed a piece looks
+    // there (round sides turn away near their edges).
+    function sideMap(t) {
+        if (t.box) {
+            const side = Math.hypot(t.dx, t.dy);
+            return {
+                A: t.front + side,
+                at(a, f) {
+                    if (a <= t.front) return { x: t.x0 + a, y: t.yt + f * t.h, k: 1 };
+                    const g = Math.min(1, (a - t.front) / side);
+                    return { x: t.x1 + t.dx * g, y: t.yt - t.dy * g + f * t.h, k: 0.5 };
+                },
+            };
+        }
+        const A = Math.PI * t.rx;
+        return {
+            A,
+            at(a, f) {
+                const th = (Math.max(0, Math.min(A, a)) / A) * Math.PI;
+                const sin = Math.sin(th);
+                return { x: t.cx - t.rx * Math.cos(th), y: t.yt + t.ry * sin + f * t.h, k: Math.max(0.12, sin) };
+            },
+        };
+    }
+
+    // The pattern on one tier's side, clipped to that side. key: stripes, dots, quilted, swags, ruffles, zigzag.
+    function sideDesign(t, key, id) {
+        if (!key || key === 'none') return '';
+        const m = sideMap(t);
+        const s = t.scale;
+        const f0 = Math.min(0.3, 9 * s / t.h);          // clear of the top edge
+        const f1 = 1 - Math.min(0.35, 14 * s / t.h);    // and of the bottom border
+        const pt = (a, f) => m.at(a, f);
+        const line = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p.x)},${r1(p.y)}`).join(' ');
+        const stroke = (d, w, extra = '') => `<path d="${d}" fill="none" style="stroke:var(--cb-side)" stroke-width="${r1(w * 10) / 10}" stroke-linecap="round" stroke-linejoin="round"${extra}/>`;
+        const along = (spacing) => {
+            const n = Math.max(3, Math.round(m.A / spacing));
+            return Array.from({ length: n }, (_, i) => ((i + 0.5) * m.A) / n);
+        };
+        let out = '';
+        if (key === 'stripes') {
+            along(13 * s).forEach((a) => {
+                const top = pt(a, f0);
+                out += stroke(line([top, pt(a, f1)]), 4.6 * s * top.k);
+            });
+        } else if (key === 'dots') {
+            const rows = Math.max(2, Math.round((t.h * (f1 - f0)) / (11 * s)) + 1);
+            const gap = 12 * s;
+            for (let j = 0; j < rows; j++) {
+                const f = f0 + 0.05 + ((f1 - f0 - 0.1) * j) / (rows - 1);
+                for (let a = (j % 2 ? gap : gap / 2); a < m.A; a += gap) {
+                    const p = pt(a, f);
+                    out += `<ellipse cx="${r1(p.x)}" cy="${r1(p.y)}" rx="${r1(2.4 * s * p.k)}" ry="${r1(2.4 * s)}" style="fill:var(--cb-side)"/>`;
+                }
+            }
+        } else if (key === 'quilted') {
+            const w = 15 * s;
+            const hgt = Math.min(t.h * (f1 - f0), w * 1.25);
+            const steps = 10;
+            for (let a0 = -m.A; a0 < m.A * 2; a0 += w) {
+                [1, -1].forEach((sign) => {
+                    const pts = [];
+                    for (let i = 0; i <= steps; i++) {
+                        const f = f0 + ((f1 - f0) * i) / steps;
+                        const a = a0 + sign * ((f - f0) * t.h / hgt) * w;
+                        if (a >= 0 && a <= m.A) pts.push(pt(a, f));
+                    }
+                    if (pts.length > 1) out += stroke(line(pts), 1.2 * s);
+                });
+            }
+        } else if (key === 'swags') {
+            const n = Math.max(3, Math.round(m.A / (26 * s)));
+            const step = m.A / n;
+            const depth = Math.min(0.5, (14 * s) / t.h);
+            for (let k = 0; k <= n; k++) {
+                const a0 = (k - 0.5) * step;
+                [[1, 2.2], [0.55, 1.4]].forEach(([sag, w]) => {
+                    const pts = [];
+                    for (let i = 0; i <= 12; i++) {
+                        const u = i / 12;
+                        const a = a0 + step * u;
+                        if (a >= 0 && a <= m.A) pts.push(pt(a, f0 + depth * sag * (1 - (2 * u - 1) ** 2)));
+                    }
+                    if (pts.length > 1) out += stroke(line(pts), w * s);
+                });
+                if (a0 >= 0 && a0 <= m.A) {
+                    const p = pt(a0, f0);
+                    out += `<circle cx="${r1(p.x)}" cy="${r1(p.y)}" r="${r1(2.3 * s)}" style="fill:var(--cb-side)"/>`;
+                    const drop = pt(a0, f0 + (5 * s) / t.h);
+                    out += `<ellipse cx="${r1(drop.x)}" cy="${r1(drop.y)}" rx="${r1(1.4 * s * drop.k)}" ry="${r1(2.4 * s)}" style="fill:var(--cb-side)"/>`;
+                }
+            }
+        } else if (key === 'ruffles') {
+            const rows = Math.max(2, Math.round((t.h * (f1 - f0)) / (11 * s)));
+            const band = (f1 - f0) / rows;
+            for (let j = 0; j < rows; j++) {
+                const top = f0 + band * j;
+                const bottom = top + band * 1.1;
+                const n = Math.max(8, Math.round(m.A / (6 * s)));
+                const upper = [];
+                const lower = [];
+                for (let i = 0; i <= n * 2; i++) {
+                    const a = (m.A * i) / (n * 2);
+                    upper.push(pt(a, top));
+                    lower.push(pt(a, bottom - (i % 2 ? 0 : (1.6 * s) / t.h)));
+                }
+                const shape = `${line(upper)} ${lower.reverse().map((p) => `L${r1(p.x)},${r1(p.y)}`).join(' ')} Z`;
+                out += `<path d="${shape}" style="fill:var(--cb-side)"/>`;
+                out += `<path d="${line(lower.reverse())}" fill="none" style="stroke:var(--cb-side-dark)" stroke-opacity=".55" stroke-width="${r1(1.1 * s * 10) / 10}"/>`;
+            }
+        } else if (key === 'zigzag') {
+            const rows = Math.max(1, Math.round((t.h * (f1 - f0)) / (14 * s)));
+            const n = Math.max(6, Math.round(m.A / (10 * s)));
+            for (let j = 0; j < rows; j++) {
+                const fc = f0 + ((f1 - f0) * (j + 0.5)) / rows;
+                const amp = Math.min((4 * s) / t.h, ((f1 - f0) / rows) * 0.32);
+                const pts = [];
+                for (let i = 0; i <= n * 2; i++) pts.push(pt((m.A * i) / (n * 2), fc + (i % 2 ? amp : -amp)));
+                out += stroke(line(pts), 1.8 * s);
+            }
+        }
+        // Keep the pattern on the side it belongs to.
+        const clip = t.box
+            ? `<rect x="${r1(t.x0)}" y="${r1(t.yt)}" width="${r1(t.front)}" height="${r1(t.h)}"/><polygon points="${r1(t.x1)},${r1(t.yt)} ${r1(t.x1 + t.dx)},${r1(t.yt - t.dy)} ${r1(t.x1 + t.dx)},${r1(t.yb - t.dy)} ${r1(t.x1)},${r1(t.yb)}"/>`
+            : `<path d="M${r1(t.x0)},${r1(t.yt)} A${r1(t.rx)},${r1(t.ry)} 0 0 0 ${r1(t.x1)},${r1(t.yt)} V${r1(t.yb)} A${r1(t.rx)},${r1(t.ry)} 0 0 1 ${r1(t.x0)},${r1(t.yb)} Z"/>`;
+        return `<defs><clipPath id="${id}">${clip}</clipPath></defs><g clip-path="url(#${id})">${out}</g>`;
+    }
+
     // ----- Toppings drawn on the cake -----
     function drip(t, rand, tinted) {
         const pts = edgePoints(t, 'top', 11 * t.scale);
@@ -691,7 +823,8 @@ window.CakeDraw = (() => {
             const isTop = i === tiers.length - 1;
             const second = cfg.style === 'tiers' && i > 0;   // upper tiers in the second color
             const decor = finishDecor(t, i > 0 && cfg.finish2 ? cfg.finish2 : cfg.finish, rand, cfg.piping);
-            let g = (boxed ? '' : contactShadow(t)) + tierBody(t, second ? uid + '2' : uid, ombre) + trimmed(decor.under);
+            let g = (boxed ? '' : contactShadow(t)) + tierBody(t, second ? uid + '2' : uid, ombre) + trimmed(decor.under)
+                + sideDesign(t, (cfg.sides || [])[i], `${uid}-side${i}`);
             if (isTop && toppings.has('chocolate_drip')) g += item('chocolate_drip', drip(t, seeded(i + 7), cfg.dripTint));
             g += trimmed(decor.over);
             if (toppings.has('pearls')) g += item('pearls', row(t, 'bottom', 'cb-pearl', 7.6, 1, decor.trim + 5));
@@ -799,6 +932,10 @@ window.CakeDraw = (() => {
         add(`body-${body}`, 'base', 'cake');
         // The upper tier again on top, when it has its own color (two-tone tiers) or its own surface.
         if (cfg.style === 'tiers' || body2 !== body) add(`body-${body2}-top`, cfg.style === 'tiers' ? 'base2' : 'base', 'cake');
+        // Side designs, one image per tier (t1 = bottom tier), under the drip and the finish's borders.
+        (cfg.sides || []).forEach((key, i) => {
+            if (key && key !== 'none') add(`side-${key}-t${i + 1}`, 'side', 'cake');
+        });
         if (drip) {
             if (cfg.dripTint && has('drip-tint')) add('drip-tint', 'drip', 'cake', 'chocolate_drip');
             else add('drip', '', 'cake', 'chocolate_drip');
@@ -1088,7 +1225,7 @@ window.CakeDraw = (() => {
                 contactShadow = `<ellipse cx="${r1(bodyBox[0] + bodyBox[2] / 2)}" cy="${r1(rig.base[1] + 1)}" rx="${r1(rx)}" ry="${r1(rx * (rig.top && rig.top.box ? 0.22 : 0.33))}" fill="url(#${uid}-rest)"/>`;
             }
         }
-        svg.innerHTML = `<defs>${fixed ? `<radialGradient id="${uid}-rest"><stop offset=".55" stop-color="#2a1a14" stop-opacity=".34"/><stop offset="1" stop-color="#2a1a14" stop-opacity="0"/></radialGradient>` : ''}${tint('base', '--cb-base')}${tint('base2', '--cb-base2')}${tint('accent', '--cb-accent')}${tint('trim', '--cb-trim')}${tint('board', '--cb-board')}${tint('drip', '--cb-drip')}${ombreMask}</defs>
+        svg.innerHTML = `<defs>${fixed ? `<radialGradient id="${uid}-rest"><stop offset=".55" stop-color="#2a1a14" stop-opacity=".34"/><stop offset="1" stop-color="#2a1a14" stop-opacity="0"/></radialGradient>` : ''}${tint('base', '--cb-base')}${tint('base2', '--cb-base2')}${tint('accent', '--cb-accent')}${tint('trim', '--cb-trim')}${tint('side', '--cb-side')}${tint('board', '--cb-board')}${tint('drip', '--cb-drip')}${ombreMask}</defs>
             <g transform="translate(${ax} ${ay}) scale(${scale}) translate(${-ax} ${-ay})">
                 ${fixed ? standHtml : groupHtml('back')}
                 <g transform="translate(${d.tx} ${d.ty})">

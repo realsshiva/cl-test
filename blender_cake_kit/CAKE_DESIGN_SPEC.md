@@ -17,6 +17,8 @@ to check, fix or extend a render by hand.
 | `base_color` | `#F9C6D0` | Frosting colour. Any 6-digit hex |
 | `accent_color` | `#D4A63A` | Piping, borders, ribbon, roses, macarons, candle stripes, message ink. Any hex |
 | `toppings` | `["chocolate_drip","macarons"]` | **Max 4.** See §6 |
+| `side_designs` | `["quilted","swags"]` | Pattern on the sides of each tier, bottom tier first. See §6b |
+| `side_color` | `#2A9D8F` | Colour of the side designs. Empty = the trim colour (which is the accent unless set) |
 | `message` | `Happy Birthday, Mia!` | **Max 40 characters.** See §7 |
 | `customer`, `pickup_date` | | Not drawn; only for file names and labels |
 | `notes` | `Unicorn theme, no nuts` | Free text from the customer. Read it and add theme details by hand (see §9) |
@@ -107,6 +109,25 @@ washes the colours out, so the customer would not recognise their colour.)
 | `chocolate_drip` | **Top tier only** | Glossy dark ganache covering the top, rolled over the edge, ~80% of the edge has drips of random length (up to ~45% of the tier height) with round drops at the ends. Top-edge piping sits **on top of** the drip |
 | `gold_leaf` | Top tier: a cluster of ~9 flakes on the front-left of the side, plus 2–3 flakes on top | Irregular, crinkled, metallic gold |
 | `candles` | Top centre, **3 candles** | Thin white candles with spiral stripes in the accent colour, lit flames with a warm glow |
+
+## 6b. Side designs (one per tier)
+
+Chosen in the Cake Builder's **Sides** step, for each tier separately (a one-tier cake has one).
+All are in the **side design colour**, between the bottom border/ribbon and just under the top edge
+(from about 0.42 in × tier scale above the bottom to about 0.2 in below the top).
+
+| Key | How it looks |
+|---|---|
+| `none` | Plain sides |
+| `stripes` | Raised fondant stripes running up the side, ~0.26 in wide, every ~0.75 in |
+| `dots` | Staggered rows of small domed dots (~0.26 in across), ~0.6 in apart |
+| `quilted` | Diamond lattice of thin piped lines (diamonds ~0.85 in wide), a small bead where the lines cross |
+| `swags` | Draped double garlands hanging from the top of the side, ~1.6 in wide, with a bead and a drop where two swags meet |
+| `ruffles` | Rows of gathered frills, each hanging from its own line and flaring out at its bottom edge |
+| `zigzag` | Rows of piped zigzag lines all the way round |
+
+Toppings on the side (sprinkles, pearls, gold leaf, side flowers) and a chocolate drip sit **over** the side design.
+The message (front of the top tier) is piped over it too.
 
 **Arrangement on top:** candles go in the middle (a small triangle, or a row if they are the only topping).
 The other pieces sit on a ring at ~62% of the radius, spread evenly, starting at the back so

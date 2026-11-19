@@ -233,6 +233,37 @@
     aspect-ratio: 38 / 25;
 }
 
+/* Sides step: one row of pattern cards per tier. */
+.cb-grid-sides {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 0.6rem;
+}
+
+.cb-side-tier + .cb-side-tier {
+    margin-top: 1.4rem;
+}
+
+.cb-side-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+    margin-bottom: 0.6rem;
+}
+
+.cb-side-head .cb-sub {
+    margin-bottom: 0;
+}
+
+.cb-side-option {
+    padding: 0.55rem 0.45rem 0.7rem;
+}
+
+.cb-side-thumb {
+    max-width: 120px;
+}
+
 .cb-option-name {
     font-weight: 600;
     font-size: 0.9rem;
@@ -753,6 +784,10 @@
     }
 
     .cb-grid-finishes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cb-grid-sides {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 

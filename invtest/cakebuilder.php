@@ -91,6 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
         'drip' => (string)($_POST['drip-color'] ?? ''),
         'board' => (string)($_POST['board-color'] ?? ''),
         'ink' => (string)($_POST['ink-color'] ?? ''),
+        'side' => (string)($_POST['side-color'] ?? ''),
+        // Side design per tier, bottom tier first (a one-tier cake only uses the first).
+        'sides' => [(string)($_POST['side-t1'] ?? 'none'), (string)($_POST['side-t2'] ?? 'none')],
         'piping' => (string)($_POST['piping'] ?? ''),
         'font' => (string)($_POST['msg-font'] ?? ''),
         'layout' => (string)($_POST['layout'] ?? ''),
@@ -199,6 +202,7 @@ $steps = [
     ['Shape', 'bi-bounding-box-circles'],
     ['Size', 'bi-arrows-angle-expand'],
     ['Finish', 'bi-brush'],
+    ['Sides', 'bi-layers'],
     ['Colors', 'bi-palette'],
     ['Toppings', 'bi-stars'],
     ['Message', 'bi-chat-heart'],
@@ -212,12 +216,14 @@ $colorGroups = [
     'base2' => ['Second color', $baseColors, null],
     'accent' => ['Accent', $accentColors, null],
     'trim' => ['Piping & trim', $accentColors, 'Match accent'],
+    'side' => ['Side design', $accentColors, 'Match trim'],
     'drip' => ['Drip', cakeDripColors(), 'Chocolate'],
     'board' => ['Stand', cakeBoardColors(), 'White'],
     'ink' => ['Message', cakeInkColors(), 'Automatic'],
 ];
 $cakeStyles = cakeStyles();
 $pipingStyles = cakePipingStyles();
+$sideDesigns = cakeSideDesigns();
 $cakeFonts = cakeFonts();
 
 $builderData = [
@@ -228,6 +234,7 @@ $builderData = [
     'colorGroups' => array_map(fn($g) => ['label' => $g[0], 'colors' => $g[1], 'auto' => $g[2]], $colorGroups),
     'styles' => $cakeStyles,
     'pipingStyles' => $pipingStyles,
+    'sideDesigns' => array_map(fn($d) => $d[0], $sideDesigns),
     'fonts' => array_map(fn($f) => $f[0], $cakeFonts),
     'toppings' => array_map(fn($t) => $t[0], $toppings),
     'maxToppings' => CAKE_MAX_TOPPINGS,
@@ -401,9 +408,44 @@ $value = fn(string $key, string $default = '') => e($posted[$key] ?? $default);
                                 </div>
                             </section>
 
-                            <!-- 4. Colors -->
+                            <!-- 4. Sides: a pattern around the sides, chosen for each tier. -->
                             <section class="cb-step" data-step="3" aria-labelledby="cb-h3" hidden>
-                                <h2 class="cb-step-title" id="cb-h3">Make it colorful</h2>
+                                <h2 class="cb-step-title" id="cb-h3">Design the sides</h2>
+                                <p class="cb-step-hint" id="cb-sides-hint">Pick a pattern for the sides of the cake, or keep them plain.</p>
+                                <?php foreach ([1 => 'Bottom tier', 2 => 'Top tier'] as $tier => $tierLabel): ?>
+                                    <!-- Tier 2 is only shown for two-tier cakes (cakebuilder.js). -->
+                                    <div class="cb-side-tier" id="cb-side-t<?php echo $tier; ?>"<?php echo $tier > 1 ? ' hidden' : ''; ?>>
+                                        <div class="cb-side-head">
+                                            <h3 class="cb-sub" id="cb-side-t<?php echo $tier; ?>-label"><?php echo e($tierLabel); ?></h3>
+                                            <button class="btn btn-link btn-sm p-0" type="button" data-side-copy="<?php echo $tier; ?>" hidden>
+                                                <i class="bi bi-copy me-1"></i>Use on both tiers
+                                            </button>
+                                        </div>
+                                        <div class="cb-grid cb-grid-sides" role="radiogroup" aria-labelledby="cb-side-t<?php echo $tier; ?>-label">
+                                            <?php foreach ($sideDesigns as $key => [$label, $blurb]): ?>
+                                                <?php $sideId = 'side-t' . $tier . '-' . $key; ?>
+                                                <div>
+                                                    <input class="btn-check" type="radio" name="side-t<?php echo $tier; ?>" id="<?php echo e($sideId); ?>" value="<?php echo e($key); ?>"<?php echo $key === 'none' ? ' checked' : ''; ?>>
+                                                    <label class="cb-option cb-side-option" for="<?php echo e($sideId); ?>">
+                                                        <!-- A small cake with this pattern, in the cake's colors (drawn by cakebuilder.js). -->
+                                                        <svg class="cb-thumb cb-side-thumb" viewBox="10 100 380 250" aria-hidden="true" data-side="<?php echo e($key); ?>"></svg>
+                                                        <span class="cb-option-name"><?php echo e($label); ?></span>
+                                                        <span class="cb-option-meta"><?php echo e($blurb); ?></span>
+                                                    </label>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                                <div class="cb-inline-color mt-3" id="cb-side-color" hidden>
+                                    <span class="cb-dot" id="cb-side-dot"></span><span id="cb-side-name">Side design color</span>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2" type="button" data-color-target="side"><i class="bi bi-palette me-1"></i>Change side design color</button>
+                                </div>
+                            </section>
+
+                            <!-- 5. Colors -->
+                            <section class="cb-step" data-step="4" aria-labelledby="cb-h4" hidden>
+                                <h2 class="cb-step-title" id="cb-h4">Make it colorful</h2>
                                 <p class="cb-step-hint">Pick what to color, then tap a ready-made shade or drag on the color wheel to mix your own.</p>
 
                                 <!-- One color all over, a fade between two colors, or a different color per tier. -->
@@ -472,14 +514,14 @@ $value = fn(string $key, string $default = '') => e($posted[$key] ?? $default);
                                 <p class="small text-body-secondary mt-3 mb-0" id="cb-color-names" aria-live="polite"></p>
                             </section>
 
-                            <!-- 5. Toppings -->
-                            <section class="cb-step" data-step="4" aria-labelledby="cb-h4" hidden>
+                            <!-- 6. Toppings -->
+                            <section class="cb-step" data-step="5" aria-labelledby="cb-h5" hidden>
                                 <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
-                                    <h2 class="cb-step-title" id="cb-h4">Add toppings</h2>
+                                    <h2 class="cb-step-title" id="cb-h5">Add toppings</h2>
                                     <span class="badge rounded-pill cb-count" id="cb-topping-count">0/<?php echo CAKE_MAX_TOPPINGS; ?> chosen</span>
                                 </div>
                                 <p class="cb-step-hint">Choose up to <?php echo CAKE_MAX_TOPPINGS; ?>, or skip this step for a clean look. Toppings on top of the cake can be dragged around, resized and copied.</p>
-                                <div class="cb-chips" role="group" aria-labelledby="cb-h4">
+                                <div class="cb-chips" role="group" aria-labelledby="cb-h5">
                                     <?php foreach ($toppings as $key => [$label, $icon]): ?>
                                         <input class="btn-check cb-topping" type="checkbox" name="toppings[]" id="top-<?php echo e($key); ?>" value="<?php echo e($key); ?>">
                                         <label class="cb-chip cb-chip-topping" for="top-<?php echo e($key); ?>">
@@ -504,9 +546,9 @@ $value = fn(string $key, string $default = '') => e($posted[$key] ?? $default);
                                 </div>
                             </section>
 
-                            <!-- 6. Message -->
-                            <section class="cb-step" data-step="5" aria-labelledby="cb-h5" hidden>
-                                <h2 class="cb-step-title" id="cb-h5">Write a message</h2>
+                            <!-- 7. Message -->
+                            <section class="cb-step" data-step="6" aria-labelledby="cb-h6" hidden>
+                                <h2 class="cb-step-title" id="cb-h6">Write a message</h2>
                                 <p class="cb-step-hint">Optional. It's piped onto the cake.</p>
                                 <label class="form-label" for="cb-message">Cake message</label>
                                 <input class="form-control form-control-lg" type="text" id="cb-message" name="message" maxlength="<?php echo CAKE_MESSAGE_MAX; ?>" placeholder="Happy Birthday, Mia!" value="<?php echo $value('message'); ?>" autocomplete="off">
@@ -536,9 +578,9 @@ $value = fn(string $key, string $default = '') => e($posted[$key] ?? $default);
                                 <p class="small text-body-secondary mt-3 mb-0"><i class="bi bi-hand-index-thumb me-1"></i>Drag the message on the cake to move it. Tap it to make it bigger or smaller.</p>
                             </section>
 
-                            <!-- 7. Review -->
-                            <section class="cb-step" data-step="6" aria-labelledby="cb-h6" hidden>
-                                <h2 class="cb-step-title" id="cb-h6">Ready for the oven?</h2>
+                            <!-- 8. Review -->
+                            <section class="cb-step" data-step="7" aria-labelledby="cb-h7" hidden>
+                                <h2 class="cb-step-title" id="cb-h7">Ready for the oven?</h2>
                                 <p class="cb-step-hint">Check your cake, then send it to the production queue.</p>
                                 <dl class="cb-summary" id="cb-summary"></dl>
                                 <div class="row g-3 mt-1">
