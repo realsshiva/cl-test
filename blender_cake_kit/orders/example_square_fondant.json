@@ -1,0 +1,10 @@
+{
+  "recipe_name": "Square Custom Cake",
+  "size": "8x4",
+  "finish": "All Fondant",
+  "base_color": "#C5E1F5",
+  "accent_color": "#2A9D8F",
+  "toppings": ["pearls", "candles", "strawberries"],
+  "message": "Congrats Ana",
+  "render": {"views": ["three_quarter"], "stand": "silver"}
+}

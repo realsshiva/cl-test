@@ -1,0 +1,10 @@
+{
+  "recipe_name": "Rectangle Custom Cake",
+  "size": "12x9x2.5",
+  "finish": "Plain",
+  "base_color": "#7B4B36",
+  "accent_color": "#FFFFFF",
+  "toppings": ["sprinkles", "flowers", "macarons"],
+  "message": "Happy Retirement, Mr. Cruz",
+  "render": {"views": ["three_quarter"], "stand": "wood", "message_placement": "top"}
+}

@@ -1,0 +1,3 @@
+# Written by render_builder_assets.py while it runs (read by render_status.php).
+render_progress.json
+render_progress.json.tmp

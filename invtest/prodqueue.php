@@ -228,7 +228,7 @@ $activeBatches = [];
 $result = $conn->query(
 	'SELECT b.`prodbatch-Id`, b.`prodbatch-Name`, b.`recvar-Id`, b.`prodbatch-Qty`, b.`prodbatch-Status`,
 	        d.`ccd-Id`, d.`ccd-BaseColor`, d.`ccd-AccentColor`, d.`ccd-Toppings`, d.`ccd-Message`,
-	        d.`ccd-CustomerName`, d.`ccd-PickupDate`, d.`ccd-Notes`
+	        d.`ccd-CustomerName`, d.`ccd-PickupDate`, d.`ccd-Notes`, d.`ccd-Design`
 	 FROM `m3-production_batch` b
 	 LEFT JOIN `m3.1-custom_cake_design` d ON d.`prodbatch-Id` = b.`prodbatch-Id`
 	 WHERE b.`prodbatch-Status` NOT IN (\'Cancelled\', \'Finished\')
@@ -236,7 +236,9 @@ $result = $conn->query(
 );
 while ($row = $result->fetch_assoc()) {
 	$row['ingredients'] = ingredientRows($conn, (string)$row['recvar-Id'], (int)$row['prodbatch-Qty']);
-	$row['sufficient'] = count($row['ingredients']) > 0;
+	// Custom cakes from the Cake Builder don't need ingredients, so an empty list is fine for them.
+	$row['noIngredientsNeeded'] = $row['ccd-Id'] !== null && count($row['ingredients']) === 0;
+	$row['sufficient'] = count($row['ingredients']) > 0 || $row['noIngredientsNeeded'];
 	foreach ($row['ingredients'] as $ingredient) {
 		if (!$ingredient['sufficient']) {
 			$row['sufficient'] = false;
@@ -254,6 +256,38 @@ foreach ($activeBatches as $batch) {
 		break;
 	}
 }
+
+// A custom cake gets a picture of its design, drawn by cakedraw.js exactly as the Cake Builder showed it.
+$cakeDesign = null;    // the saved design extras (second color, trim, piping, font, layout...)
+$cakePreview = null;   // what cakedraw.js needs to draw it
+if ($selectedBatch !== null && $selectedBatch['ccd-Id'] !== null) {
+	$cakeDesign = cakeDecodeDesign($selectedBatch['ccd-Design']);
+	$variantQuery = $conn->prepare(
+		'SELECT r.`rec-Id`, r.`rec-Name`, v.`recvar-SizeOrPcs`, v.`recvar-Foundation`
+		 FROM `m222-recipe_variant2` v JOIN `m22-recipe_master` r ON r.`rec-Id` = v.`rec-Id`
+		 WHERE v.`recvar-Id` = ? LIMIT 1'
+	);
+	$variantId = (string)$selectedBatch['recvar-Id'];
+	$variantQuery->bind_param('s', $variantId);
+	$variantQuery->execute();
+	$variant = $variantQuery->get_result()->fetch_assoc();
+	$variantQuery->close();
+	if ($variant) {
+		$cakePreview = cakeShapeFor((string)$variant['rec-Id'], (string)$variant['rec-Name']) + [
+			'size' => trim((string)$variant['recvar-SizeOrPcs']),
+			'finish' => trim((string)$variant['recvar-Foundation']) ?: 'Plain',
+			'base' => (string)$selectedBatch['ccd-BaseColor'],
+			'accent' => (string)$selectedBatch['ccd-AccentColor'],
+			'toppings' => array_keys(cakeToppingLabels((string)$selectedBatch['ccd-Toppings'])),
+			'message' => (string)$selectedBatch['ccd-Message'],
+			'design' => $cakeDesign,
+			// The photo printed on top, if the customer added one and the file is still there.
+			'photoUrl' => $cakeDesign['photo'] && cakePhotoFile((string)$cakeDesign['photo'][0]) ? CAKE_PHOTO_URL . $cakeDesign['photo'][0] . '.jpg' : null,
+			'renders' => cakeRenders(),
+		];
+	}
+}
+
 $message = $_GET['message'] ?? '';
 $messages = [
 	'added' => 'Production batch added to the queue.',
@@ -274,10 +308,14 @@ $messages = [
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 	<link rel="stylesheet" href="/cl-test/invtest/nav.css">
 	<style>
+		.cake-preview { border-radius: 1rem; background: radial-gradient(120% 90% at 50% 0%, #fff1f4, #fdf6e9 55%, #eaf7f0); max-width: 340px; }
+		[data-bs-theme="dark"] .cake-preview { background: radial-gradient(120% 90% at 50% 0%, #3a2730, #2f2a22 55%, #1f302a); }
+		.cake-preview svg { display: block; width: 100%; height: auto; }
 		.cake-dot { display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 50%; vertical-align: -0.1em; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
 	</style>
 </head>
 <body class="bg-body-tertiary">
+<?php if ($cakePreview !== null) readfile(__DIR__ . '/assets/cake-sprite.svg'); ?>
 <?php include 'nav.php'; ?>
 
 <main class="app-main">
@@ -315,6 +353,10 @@ $messages = [
 									<?php if ($batch['ccd-Id'] !== null): ?>
 										<div class="d-flex flex-wrap align-items-center gap-2 mt-1 small">
 											<span class="badge rounded-pill bg-danger-subtle text-danger-emphasis"><i class="bi bi-cake2 me-1"></i>Custom</span>
+											<?php $rowAllergens = array_intersect_key(cakeAllergens(), array_flip(cakeDecodeDesign($batch['ccd-Design'])['allergens'])); ?>
+											<?php if ($rowAllergens): ?>
+												<span class="badge rounded-pill text-bg-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>No <?php echo e(strtolower(implode(', ', $rowAllergens))); ?></span>
+											<?php endif; ?>
 											<span class="d-inline-flex gap-1" aria-hidden="true">
 												<span class="cake-dot" style="background: <?php echo e($batch['ccd-BaseColor']); ?>"></span>
 												<span class="cake-dot" style="background: <?php echo e($batch['ccd-AccentColor']); ?>"></span>
@@ -327,7 +369,9 @@ $messages = [
 								</td>
 								<td><?php echo e($batch['prodbatch-Qty']); ?></td>
 								<td>
-									<?php if ($batch['sufficient']): ?>
+									<?php if ($batch['noIngredientsNeeded']): ?>
+										<span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">Not needed</span>
+									<?php elseif ($batch['sufficient']): ?>
 										<span class="badge rounded-pill bg-success-subtle text-success-emphasis">Sufficient</span>
 									<?php else: ?>
 										<span class="badge rounded-pill bg-danger-subtle text-danger-emphasis">Insufficient</span>
@@ -376,27 +420,104 @@ $messages = [
 					<h2 class="h6 mb-0"><i class="bi bi-cake2 text-danger-emphasis me-2"></i>Cake Design: <?php echo e($selectedBatch['prodbatch-Name']); ?></h2>
 				</div>
 				<div class="card-body">
+					<div class="row g-4 align-items-start">
+					<?php if ($cakePreview !== null): ?>
+						<div class="col-md-5 col-lg-4">
+							<div class="cake-preview">
+								<svg id="cake-preview" viewBox="0 0 400 360" role="img" aria-label="Picture of the cake design"></svg>
+							</div>
+							<a class="btn btn-outline-secondary btn-sm mt-2" href="cake_order.php?id=<?php echo rawurlencode((string)$selectedBatch['prodbatch-Id']); ?>"
+								title="Order file for the Blender Cake Kit, to render this exact design in 3D">
+								<i class="bi bi-box me-1"></i>Blender order file
+							</a>
+						</div>
+					<?php endif; ?>
+					<div class="col">
 					<dl class="row mb-0 small">
 						<dt class="col-sm-3 text-body-secondary">Colors</dt>
 						<dd class="col-sm-9">
 							<span class="cake-dot" style="background: <?php echo e($selectedBatch['ccd-BaseColor']); ?>"></span>
 							<?php echo e(cakeColorName((string)$selectedBatch['ccd-BaseColor'])); ?> (<?php echo e($selectedBatch['ccd-BaseColor']); ?>)
+							<?php if ($cakeDesign['style'] !== 'solid'): ?>
+								<span class="mx-2 text-body-tertiary">|</span>
+								<span class="cake-dot" style="background: <?php echo e($cakeDesign['base2']); ?>"></span>
+								<?php echo e(cakeColorName((string)$cakeDesign['base2'])); ?> (<?php echo e($cakeDesign['base2']); ?>),
+								<?php echo $cakeDesign['style'] === 'ombre' ? 'ombre: fades in from the top' : 'upper tier'; ?>
+							<?php endif; ?>
 							<span class="mx-2 text-body-tertiary">|</span>
 							<span class="cake-dot" style="background: <?php echo e($selectedBatch['ccd-AccentColor']); ?>"></span>
 							<?php echo e(cakeColorName((string)$selectedBatch['ccd-AccentColor'], true)); ?> accents (<?php echo e($selectedBatch['ccd-AccentColor']); ?>)
 						</dd>
+						<?php
+						// Extra colors and details, only the ones the customer changed.
+						$hasDrip = in_array('chocolate_drip', array_keys($cakeToppings), true);
+						$extraColors = [];
+						$sidesText = cakeSidesText($cakeDesign['sides']);
+						foreach (['trim' => 'Piping & trim', 'side' => 'Side design', 'drip' => 'Drip', 'board' => 'Stand', 'ink' => 'Message'] as $key => $label) {
+							if ($cakeDesign[$key] === 'auto' || ($key === 'drip' && !$hasDrip) || ($key === 'ink' && $selectedBatch['ccd-Message'] === '') || ($key === 'side' && $sidesText === '')) continue;
+							$extraColors[$label] = (string)$cakeDesign[$key];
+						}
+						$isButtercream = $cakePreview !== null && stripos($cakePreview['finish'], 'butter') !== false;
+						$pieceCounts = array_count_values(array_column($cakeDesign['items'] ?? [], 0));
+						?>
+						<?php if ($extraColors): ?>
+							<dt class="col-sm-3 text-body-secondary">Other colors</dt>
+							<dd class="col-sm-9">
+								<?php foreach ($extraColors as $label => $hex): ?>
+									<span class="me-3 text-nowrap"><span class="cake-dot" style="background: <?php echo e($hex); ?>"></span>
+									<?php echo e($label); ?>: <?php echo e(cakeColorName($hex)); ?> (<?php echo e($hex); ?>)</span>
+								<?php endforeach; ?>
+							</dd>
+						<?php endif; ?>
+						<?php $cakeAllergens = array_intersect_key(cakeAllergens(), array_flip($cakeDesign['allergens'])); ?>
+						<?php if ($cakeAllergens): ?>
+							<dt class="col-sm-3 text-danger-emphasis">Allergies</dt>
+							<dd class="col-sm-9">
+								<?php foreach ($cakeAllergens as $label): ?>
+									<span class="badge rounded-pill text-bg-danger me-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>No <?php echo e(strtolower($label)); ?></span>
+								<?php endforeach; ?>
+								<span class="text-body-secondary">The customer asked to avoid these.</span>
+							</dd>
+						<?php endif; ?>
+						<?php if ($cakeDesign['finish2'] !== ''): ?>
+							<dt class="col-sm-3 text-body-secondary">Upper tier finish</dt>
+							<dd class="col-sm-9"><?php echo e($cakeDesign['finish2']); ?> <span class="text-body-secondary">(bottom tier: <?php echo e($cakePreview['finish'] ?? 'as queued'); ?>)</span></dd>
+						<?php endif; ?>
+						<?php if ($sidesText !== ''): ?>
+							<dt class="col-sm-3 text-body-secondary">Side design</dt>
+							<dd class="col-sm-9"><?php echo e($sidesText); ?></dd>
+						<?php endif; ?>
+						<?php $isButtercream = $isButtercream || stripos((string)$cakeDesign['finish2'], 'butter') !== false; ?>
+						<?php if ($isButtercream && $cakeDesign['piping'] !== 'rosette'): ?>
+							<dt class="col-sm-3 text-body-secondary">Top border</dt>
+							<dd class="col-sm-9"><?php echo e(cakePipingStyles()[$cakeDesign['piping']] ?? 'Rosettes'); ?></dd>
+						<?php endif; ?>
 						<dt class="col-sm-3 text-body-secondary">Toppings</dt>
 						<dd class="col-sm-9">
 							<?php if (count($cakeToppings) === 0): ?>
 								<span class="text-body-secondary">None</span>
 							<?php else: ?>
-								<?php foreach ($cakeToppings as [$label, $icon]): ?>
-									<span class="badge rounded-pill bg-body-secondary text-body-emphasis border me-1"><i class="bi <?php echo e($icon); ?> me-1"></i><?php echo e($label); ?></span>
+								<?php foreach ($cakeToppings as $key => [$label, $icon]): ?>
+									<span class="badge rounded-pill bg-body-secondary text-body-emphasis border me-1"><i class="bi <?php echo e($icon); ?> me-1"></i><?php echo e($label); ?><?php echo isset($pieceCounts[$key]) ? ' &times;' . (int)$pieceCounts[$key] : ''; ?></span>
 								<?php endforeach; ?>
+								<?php if ($pieceCounts): ?><div class="text-body-secondary mt-1">Placed as shown in the picture.</div><?php endif; ?>
 							<?php endif; ?>
 						</dd>
+						<?php if ($cakeDesign['photo']): ?>
+							<dt class="col-sm-3 text-body-secondary">Photo on top</dt>
+							<dd class="col-sm-9">
+								<?php if (!empty($cakePreview['photoUrl'])): ?>
+									<a class="d-inline-flex align-items-center gap-2" href="<?php echo e($cakePreview['photoUrl']); ?>" target="_blank" rel="noopener">
+										<img src="<?php echo e($cakePreview['photoUrl']); ?>" alt="" width="44" height="44" class="rounded border" style="object-fit: cover">
+										Open the photo to print it (edible paper)
+									</a>
+								<?php else: ?>
+									<span class="text-danger-emphasis">The photo file is missing. Ask the customer for it again.</span>
+								<?php endif; ?>
+							</dd>
+						<?php endif; ?>
 						<dt class="col-sm-3 text-body-secondary">Message</dt>
-						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-Message'] !== '' ? '&ldquo;' . e($selectedBatch['ccd-Message']) . '&rdquo;' : '<span class="text-body-secondary">No message</span>'; ?></dd>
+						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-Message'] !== '' ? '&ldquo;' . e($selectedBatch['ccd-Message']) . '&rdquo; <span class="text-body-secondary">in ' . e(cakeFonts()[$cakeDesign['font']][0] ?? 'Classic Script') . ' lettering</span>' : '<span class="text-body-secondary">No message</span>'; ?></dd>
 						<dt class="col-sm-3 text-body-secondary">Customer</dt>
 						<dd class="col-sm-9"><?php echo $selectedBatch['ccd-CustomerName'] !== null ? e($selectedBatch['ccd-CustomerName']) : '<span class="text-body-secondary">Not given</span>'; ?></dd>
 						<dt class="col-sm-3 text-body-secondary">Pickup date</dt>
@@ -404,6 +525,8 @@ $messages = [
 						<dt class="col-sm-3 text-body-secondary">Notes</dt>
 						<dd class="col-sm-9 mb-0" style="white-space: pre-line"><?php echo $selectedBatch['ccd-Notes'] !== null ? e($selectedBatch['ccd-Notes']) : '<span class="text-body-secondary">None</span>'; ?></dd>
 					</dl>
+					</div>
+					</div>
 				</div>
 			</div>
 		<?php endif; ?>
@@ -421,7 +544,7 @@ $messages = [
 						</thead>
 						<tbody>
 						<?php if (count($selectedBatch['ingredients']) === 0): ?>
-							<tr><td colspan="4" class="text-center text-body-secondary py-4">No ingredients are configured for this recipe variant.</td></tr>
+							<tr><td colspan="4" class="text-center text-body-secondary py-4"><?php echo $selectedBatch['noIngredientsNeeded'] ? 'Custom cakes don&rsquo;t need ingredients set up.' : 'No ingredients are configured for this recipe variant.'; ?></td></tr>
 						<?php else: ?>
 							<?php foreach ($selectedBatch['ingredients'] as $ingredient): ?>
 								<?php $statusClass = $ingredient['status'] === 'OK' ? 'bg-success-subtle text-success-emphasis' : ($ingredient['status'] === 'Low' ? 'bg-warning-subtle text-warning-emphasis' : 'text-bg-danger'); ?>
@@ -484,6 +607,41 @@ $messages = [
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<?php if ($cakePreview !== null): ?>
+<link rel="stylesheet" href="<?php echo e(CAKE_FONTS_URL); ?>">
+<script type="application/json" id="cake-preview-data"><?php echo json_encode($cakePreview, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?></script>
+<script src="/cl-test/invtest/cakedraw.js?v=<?php echo filemtime(__DIR__ . '/cakedraw.js'); ?>"></script>
+<script>
+	// Draws the selected custom cake the way the Cake Builder showed it to the customer.
+	(() => {
+		const cake = JSON.parse(document.getElementById('cake-preview-data').textContent);
+		const svg = document.getElementById('cake-preview');
+		const design = cake.design;
+		const hex = (value) => (/^#[0-9A-F]{6}$/.test(value || '') ? value : '');
+		const base2 = design.style !== 'solid' ? hex(design.base2) : '';
+		CakeDraw.init(cake.renders);
+		CakeDraw.applyColors(svg, {
+			base: cake.base, accent: cake.accent, base2,
+			trim: hex(design.trim), side: hex(design.side), board: hex(design.board), drip: hex(design.drip), ink: hex(design.ink),
+			inkOn: design.style === 'tiers' ? base2 : design.style === 'ombre' ? CakeDraw.mix(cake.base, base2, 0.5).toUpperCase() : '',
+		});
+		const draw = () => CakeDraw.drawCake(svg, {
+			shape: cake.shape, tiers: cake.tiers, size: cake.size, finish: cake.finish,
+			toppings: cake.toppings, message: cake.message,
+			style: base2 ? design.style : 'solid', piping: design.piping, dripTint: !!hex(design.drip), font: design.font,
+			finish2: design.finish2 || '',
+			sides: design.sides || [],
+			photo: cake.photoUrl && design.photo ? { src: cake.photoUrl, u: design.photo[1], v: design.photo[2], s: design.photo[3] } : null,
+			msg: { dx: design.msg[0], dy: design.msg[1], size: design.msg[2] },
+			// Cakes saved before toppings could be moved have no layout; they get the usual spots.
+			items: design.items ? design.items.map(([k, u, v, s]) => ({ k, u, v, s })) : undefined,
+		});
+		draw();
+		// The message is sized for its font, so draw again once the web fonts have arrived.
+		if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+	})();
+</script>
+<?php endif; ?>
 <script>
 	const ingredientsToggle = document.getElementById('toggle-ingredients');
 	if (ingredientsToggle) {

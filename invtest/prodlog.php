@@ -59,9 +59,10 @@ if ($batchId === false || $batchId < 1) {
 			$transactionStarted = true;
 
 			$lookup = $conn->prepare(
-				'SELECT b.`prodbatch-Qty`, b.`recvar-Id`, v.`recvar-RecCost`
+				'SELECT b.`prodbatch-Qty`, b.`recvar-Id`, v.`recvar-RecCost`, d.`ccd-Id`
 				 FROM `m3-production_batch` b
 				 JOIN `m222-recipe_variant3` v ON v.`recvar-Id` = b.`recvar-Id`
+				 LEFT JOIN `m3.1-custom_cake_design` d ON d.`prodbatch-Id` = b.`prodbatch-Id`
 				 WHERE b.`prodbatch-Id` = ? AND b.`prodbatch-Status` = \'Pending\' FOR UPDATE'
 			);
 			$lookup->bind_param('i', $batchId);
@@ -92,7 +93,9 @@ if ($batchId === false || $batchId < 1) {
 				$recipeQuery->close();
 
 				$inventoryError = '';
-				if (count($recipeRows) === 0) {
+				// Custom cakes from the Cake Builder don't need ingredients; any that are set up are still deducted.
+				$isCustomCake = $batch['ccd-Id'] !== null;
+				if (count($recipeRows) === 0 && !$isCustomCake) {
 					$inventoryError = 'This recipe has no ingredients configured, so its stock cannot be deducted.';
 				}
 
